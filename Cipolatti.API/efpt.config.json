@@ -2,7 +2,6 @@
    "CodeGenerationMode": 4,
    "ContextClassName": "CipolattiContext",
    "ContextNamespace": null,
-   "DefaultDacpacSchema": null,
    "FilterSchemas": false,
    "IncludeConnectionString": false,
    "ModelNamespace": null,
@@ -28,11 +27,19 @@
          "ObjectType": 0
       },
       {
+         "Name": "expedicao.t_romaneio",
+         "ObjectType": 0
+      },
+      {
          "Name": "expedicao.tbl_movimentacao_volume_shopping",
          "ObjectType": 0
       },
       {
          "Name": "ht.funcionarios",
+         "ObjectType": 0
+      },
+      {
+         "Name": "operacional.tbltranportadoras",
          "ObjectType": 0
       },
       {
@@ -56,8 +63,9 @@
          "ObjectType": 3
       }
    ],
-   "UiHint": ".2024",
+   "UiHint": null,
    "UncountableWords": null,
+   "UseAsyncStoredProcedureCalls": true,
    "UseBoolPropertiesWithoutDefaultSql": false,
    "UseDatabaseNames": false,
    "UseDateOnlyTimeOnly": false,

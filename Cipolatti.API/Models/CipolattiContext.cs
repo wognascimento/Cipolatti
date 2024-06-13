@@ -25,6 +25,8 @@ public partial class CipolattiContext : DbContext
 
     public virtual DbSet<TConfCargaGeral> TConfCargaGeral { get; set; }
 
+    public virtual DbSet<TRomaneio> TRomaneio { get; set; }
+
     public virtual DbSet<TSaidaAlmox> TSaidaAlmox { get; set; }
 
     public virtual DbSet<TblAtendentesAlmox> TblAtendentesAlmox { get; set; }
@@ -33,8 +35,7 @@ public partial class CipolattiContext : DbContext
 
     public virtual DbSet<TblVolumeControlado> TblVolumeControlado { get; set; }
 
-
-    static CipolattiContext() => AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+    public virtual DbSet<Tbltranportadoras> Tbltranportadoras { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,6 +91,25 @@ public partial class CipolattiContext : DbContext
             entity.Property(e => e.Entradasistema).HasDefaultValueSql("(now())::timestamp(0) with time zone");
         });
 
+        modelBuilder.Entity<TRomaneio>(entity =>
+        {
+            entity.HasKey(e => e.CodRomaneiro).HasName("t_romaneio_pkey");
+
+            entity.Property(e => e.BauAltura).HasDefaultValueSql("0");
+            entity.Property(e => e.BauLargura).HasDefaultValueSql("0");
+            entity.Property(e => e.BauProfundidade).HasDefaultValueSql("0");
+            entity.Property(e => e.BauSoba).HasDefaultValueSql("0");
+            entity.Property(e => e.IncluidoData).HasDefaultValueSql("(now())::timestamp(0) with time zone");
+            entity.Property(e => e.IncluidoPor).HasDefaultValueSql("CURRENT_USER");
+            entity.Property(e => e.M3Carregado).HasDefaultValueSql("0");
+            entity.Property(e => e.M3Portaria).HasDefaultValueSql("0");
+            entity.Property(e => e.PlacaEstado).IsFixedLength();
+
+            entity.HasOne(d => d.CodtransportadoraNavigation).WithMany(p => p.TRomaneio)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("t_romaneio_codtransportadora_fkey");
+        });
+
         modelBuilder.Entity<TSaidaAlmox>(entity =>
         {
             entity.HasKey(e => e.CodSaidaAlmox).HasName("t_saida_almox_pkey");
@@ -121,6 +141,13 @@ public partial class CipolattiContext : DbContext
             entity.HasKey(e => e.Id).HasName("tbl_volume_controlado_pkey");
 
             entity.Property(e => e.Recebido).HasDefaultValueSql("CURRENT_DATE");
+        });
+
+        modelBuilder.Entity<Tbltranportadoras>(entity =>
+        {
+            entity.HasKey(e => e.Codtransportadora).HasName("tbltranportadoras_pkey");
+
+            entity.Property(e => e.Ddd).HasDefaultValue(10);
         });
         modelBuilder.HasSequence("carregamento_itens_shopp_seq", "expedicao");
         modelBuilder.HasSequence("conceito_idconceito_seq", "comercial");
