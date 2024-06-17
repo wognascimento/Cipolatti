@@ -3,6 +3,7 @@ using Cipolatti.API.Models;
 using Cipolatti.API.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.ObjectModel;
 
 namespace Cipolatti.API.Controllers
 {
@@ -27,7 +28,7 @@ namespace Cipolatti.API.Controllers
 
         [HttpPost("GravarVolume")]
         //public async Task<ActionResult> CadastrarVolume(TblMovimentacaoVolumeShopping endercoVolume)
-        public async Task<ActionResult> CadastrarVolume([FromBody] List<TblMovimentacaoVolumeShopping> volumes)
+        public async Task<ActionResult> CadastrarVolume([FromBody] ObservableCollection<TblMovimentacaoVolumeShopping> volumes)
         {
 
             if (volumes == null || volumes.Count == 0)

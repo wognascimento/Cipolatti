@@ -13,6 +13,8 @@ public partial class CipolattiContext : DbContext
     {
     }
 
+    static CipolattiContext() => AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
     public virtual DbSet<Funcionarios> Funcionarios { get; set; }
 
     public virtual DbSet<Qry3descricoes> Qry3descricoes { get; set; }
@@ -36,6 +38,7 @@ public partial class CipolattiContext : DbContext
     public virtual DbSet<TblVolumeControlado> TblVolumeControlado { get; set; }
 
     public virtual DbSet<Tbltranportadoras> Tbltranportadoras { get; set; }
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
