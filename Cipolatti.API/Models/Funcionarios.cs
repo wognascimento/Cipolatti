@@ -71,7 +71,7 @@ public partial class Funcionarios
     public string LocalGalpao { get; set; }
 
     [Column("data_nascimento")]
-    public DateOnly? DataNascimento { get; set; }
+    public DateTime? DataNascimento { get; set; }
 
     [Column("sexo")]
     [StringLength(15)]
@@ -94,10 +94,10 @@ public partial class Funcionarios
     public string CadastradoPor { get; set; }
 
     [Column("datacadastro")]
-    public DateOnly? Datacadastro { get; set; }
+    public DateTime? Datacadastro { get; set; }
 
     [Column("horacadastro")]
-    public TimeOnly? Horacadastro { get; set; }
+    public DateTime? Horacadastro { get; set; }
 
     [Column("cpd")]
     [StringLength(5)]
@@ -161,7 +161,7 @@ public partial class Funcionarios
     public string StatusCipa { get; set; }
 
     [Column("data_cipa")]
-    public DateOnly? DataCipa { get; set; }
+    public DateTime? DataCipa { get; set; }
 
     [Column("ocultar_dados")]
     [StringLength(5)]
@@ -197,5 +197,6 @@ public partial class Funcionarios
     public string Local { get; set; }
 
     [Column("qrcode")]
+    [StringLength(50)]
     public string Qrcode { get; set; }
 }

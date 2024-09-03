@@ -8,8 +8,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Cipolatti.API.Models;
 
-[Table("t_conf_carga_geral", Schema = "expedicao")]
-public partial class TConfCargaGeral
+[Table("t_pre_conferencia", Schema = "expedicao")]
+public partial class TPreConferencia
 {
     [Key]
     [Column("barcode")]
@@ -17,14 +17,14 @@ public partial class TConfCargaGeral
     public string Barcode { get; set; }
 
     [Column("doca_origem")]
-    [StringLength(50)]
+    [StringLength(10)]
     public string DocaOrigem { get; set; }
 
     [Column("data")]
     public DateTime? Data { get; set; }
 
     [Column("shopp")]
-    [StringLength(20)]
+    [StringLength(10)]
     public string Shopp { get; set; }
 
     [Column("resp")]
@@ -45,14 +45,7 @@ public partial class TConfCargaGeral
     [Column("data_altera")]
     public DateTime? DataAltera { get; set; }
 
-    [Column("inserido_por")]
-    [StringLength(30)]
-    public string InseridoPor { get; set; }
-
-    [Column("inserido_em", TypeName = "timestamp without time zone")]
-    public DateTime? InseridoEm { get; set; }
-
     [ForeignKey("Barcode")]
-    [InverseProperty("TConfCargaGeral")]
+    [InverseProperty("TPreConferencia")]
     public virtual TblBarcodes BarcodeNavigation { get; set; }
 }

@@ -1,5 +1,6 @@
 ﻿using Cipolatti.API.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Cipolatti.API.Controllers
 {
@@ -30,7 +31,9 @@ namespace Cipolatti.API.Controllers
                 int novoId = (int)((ultimoRegistro != null) ? ultimoRegistro.CodMovimentacao + 1 : 1);
                 foreach (var saida in saidas)
                 {
+                    var barcode = await _context.TblBarcodes.FirstOrDefaultAsync(b => b.Codigo == saida.Codcompladicional);
                     saida.CodMovimentacao = novoId;
+                    saida.Barcode = barcode.Barcode;
                     _context.TSaidaAlmox.Add(saida);
                 }
                 await _context.SaveChangesAsync();

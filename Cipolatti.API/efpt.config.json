@@ -27,6 +27,10 @@
          "ObjectType": 0
       },
       {
+         "Name": "expedicao.t_pre_conferencia",
+         "ObjectType": 0
+      },
+      {
          "Name": "expedicao.t_romaneio",
          "ObjectType": 0
       },
@@ -40,6 +44,10 @@
       },
       {
          "Name": "operacional.tbltranportadoras",
+         "ObjectType": 0
+      },
+      {
+         "Name": "producao.tbl_barcodes",
          "ObjectType": 0
       },
       {

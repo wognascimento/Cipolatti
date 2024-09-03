@@ -82,4 +82,19 @@ public partial class Qry3descricoes
 
     [Column("estoque_min")]
     public float? EstoqueMin { get; set; }
+
+    [Column("m3")]
+    [Precision(12, 2)]
+    public decimal? M3 { get; set; }
+
+    [Column("pl")]
+    [Precision(12, 2)]
+    public decimal? Pl { get; set; }
+
+    [Column("pb")]
+    [Precision(12, 2)]
+    public decimal? Pb { get; set; }
+
+    [Column("estoque_inicial")]
+    public float? EstoqueInicial { get; set; }
 }

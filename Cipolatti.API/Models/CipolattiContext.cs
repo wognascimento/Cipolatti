@@ -13,8 +13,6 @@ public partial class CipolattiContext : DbContext
     {
     }
 
-    static CipolattiContext() => AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-
     public virtual DbSet<Funcionarios> Funcionarios { get; set; }
 
     public virtual DbSet<Qry3descricoes> Qry3descricoes { get; set; }
@@ -27,18 +25,21 @@ public partial class CipolattiContext : DbContext
 
     public virtual DbSet<TConfCargaGeral> TConfCargaGeral { get; set; }
 
+    public virtual DbSet<TPreConferencia> TPreConferencia { get; set; }
+
     public virtual DbSet<TRomaneio> TRomaneio { get; set; }
 
     public virtual DbSet<TSaidaAlmox> TSaidaAlmox { get; set; }
 
     public virtual DbSet<TblAtendentesAlmox> TblAtendentesAlmox { get; set; }
 
+    public virtual DbSet<TblBarcodes> TblBarcodes { get; set; }
+
     public virtual DbSet<TblMovimentacaoVolumeShopping> TblMovimentacaoVolumeShopping { get; set; }
 
     public virtual DbSet<TblVolumeControlado> TblVolumeControlado { get; set; }
 
     public virtual DbSet<Tbltranportadoras> Tbltranportadoras { get; set; }
-
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -92,6 +93,25 @@ public partial class CipolattiContext : DbContext
             entity.HasKey(e => e.Barcode).HasName("t_conf_carga_geral_pkey");
 
             entity.Property(e => e.Entradasistema).HasDefaultValueSql("(now())::timestamp(0) with time zone");
+
+            entity.HasOne(d => d.BarcodeNavigation).WithOne(p => p.TConfCargaGeral)
+                .HasPrincipalKey<TblBarcodes>(p => p.Barcode)
+                .HasForeignKey<TConfCargaGeral>(d => d.Barcode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("t_conf_carga_geral_barcode_fkey");
+        });
+
+        modelBuilder.Entity<TPreConferencia>(entity =>
+        {
+            entity.HasKey(e => e.Barcode).HasName("tbl_preconf_pkey");
+
+            entity.Property(e => e.Entradasistema).HasDefaultValueSql("(now())::timestamp(0) with time zone");
+
+            entity.HasOne(d => d.BarcodeNavigation).WithOne(p => p.TPreConferencia)
+                .HasPrincipalKey<TblBarcodes>(p => p.Barcode)
+                .HasForeignKey<TPreConferencia>(d => d.Barcode)
+                .OnDelete(DeleteBehavior.ClientSetNull)
+                .HasConstraintName("t_pre_conferencia_barcode_fkey");
         });
 
         modelBuilder.Entity<TRomaneio>(entity =>
@@ -130,6 +150,15 @@ public partial class CipolattiContext : DbContext
             entity.HasKey(e => e.NomeFuncionario).HasName("tbl_atendentes_almox_pkey");
 
             entity.ToTable("tbl_atendentes_almox", "almoxarifado_jac", tb => tb.HasComment("Funcionarios de atendimento do Almoxarifado."));
+        });
+
+        modelBuilder.Entity<TblBarcodes>(entity =>
+        {
+            entity.HasKey(e => e.Codigo).HasName("tbl_barcodes_pkey");
+
+            entity.Property(e => e.Codigo).ValueGeneratedNever();
+            entity.Property(e => e.Compra).IsFixedLength();
+            entity.Property(e => e.Impresso).IsFixedLength();
         });
 
         modelBuilder.Entity<TblMovimentacaoVolumeShopping>(entity =>
