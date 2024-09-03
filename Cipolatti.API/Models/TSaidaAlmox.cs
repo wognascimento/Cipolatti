@@ -16,7 +16,7 @@ public partial class TSaidaAlmox
 
     [Key]
     [Column("cod_saida_almox")]
-    public int CodSaidaAlmox { get; set; }
+    public int? CodSaidaAlmox { get; set; }
 
     [Column("barcode")]
     [StringLength(16)]

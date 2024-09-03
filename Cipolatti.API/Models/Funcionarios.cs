@@ -97,7 +97,7 @@ public partial class Funcionarios
     public DateTime? Datacadastro { get; set; }
 
     [Column("horacadastro")]
-    public DateTime? Horacadastro { get; set; }
+    public TimeSpan? Horacadastro { get; set; }
 
     [Column("cpd")]
     [StringLength(5)]

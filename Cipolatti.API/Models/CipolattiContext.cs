@@ -8,9 +8,14 @@ namespace Cipolatti.API.Models;
 
 public partial class CipolattiContext : DbContext
 {
+    static CipolattiContext() => AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
+
     public CipolattiContext(DbContextOptions<CipolattiContext> options)
         : base(options)
     {
+        AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+        AppContext.SetSwitch("Npgsql.DisableDateTimeInfinityConversions", true);
     }
 
     public virtual DbSet<Funcionarios> Funcionarios { get; set; }
@@ -40,6 +45,8 @@ public partial class CipolattiContext : DbContext
     public virtual DbSet<TblVolumeControlado> TblVolumeControlado { get; set; }
 
     public virtual DbSet<Tbltranportadoras> Tbltranportadoras { get; set; }
+
+    
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
