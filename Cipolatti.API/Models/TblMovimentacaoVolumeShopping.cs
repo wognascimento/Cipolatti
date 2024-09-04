@@ -13,7 +13,7 @@ public partial class TblMovimentacaoVolumeShopping
 {
     [Key]
     [Column("id_linha_inserida")]
-    public int IdLinhaInserida { get; set; }
+    public int? IdLinhaInserida { get; set; }
 
     [Column("barcode_volume")]
     [StringLength(15)]

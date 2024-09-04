@@ -19,7 +19,7 @@ public partial class TRomaneio
     public DateTime DataCarregamento { get; set; }
 
     [Column("hora_chegada")]
-    public DateTime HoraChegada { get; set; }
+    public TimeSpan HoraChegada { get; set; }
 
     [Column("codtransportadora")]
     public int Codtransportadora { get; set; }
