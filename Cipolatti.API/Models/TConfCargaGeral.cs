@@ -52,6 +52,8 @@ public partial class TConfCargaGeral
     [Column("inserido_em", TypeName = "timestamp without time zone")]
     public DateTime? InseridoEm { get; set; }
 
+    public bool? manual { get; set; }
+
     [ForeignKey("Barcode")]
     [InverseProperty("TConfCargaGeral")]
     public virtual TblBarcodes BarcodeNavigation { get; set; }

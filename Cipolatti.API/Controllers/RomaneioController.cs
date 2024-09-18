@@ -56,5 +56,22 @@ namespace Cipolatti.API.Controllers
             }
         }
 
+        [HttpGet("romaneio")]
+        public async Task<ActionResult<TRomaneio>> Romaneio(int idRomaneio)
+        {
+            try
+            {
+                var r = await _context.TRomaneio.FindAsync(idRomaneio);
+                if (r == null)
+                    return BadRequest("Romaneio não encontrado");
+                else
+                    return Ok(r);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, "Erro ao listar romaneio");
+            }
+        }
+
     }
 }
