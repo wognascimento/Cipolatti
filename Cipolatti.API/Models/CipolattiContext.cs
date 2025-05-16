@@ -46,7 +46,11 @@ public partial class CipolattiContext : DbContext
 
     public virtual DbSet<Tbltranportadoras> Tbltranportadoras { get; set; }
 
-    
+    public DbSet<ControladoShoppingModel> ControladoShopping { get; set; }
+
+    public DbSet<ControladoShoppingRetornoModel> ControladoShoppingRetorno { get; set; }
+
+
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -253,6 +257,47 @@ public partial class CipolattiContext : DbContext
         modelBuilder.HasSequence<int>("tblsub_setores_codigo_sub_setor_seq", "rh");
         modelBuilder.HasSequence("temas_idtema_seq", "comercial");
         modelBuilder.HasSequence("temporario", "comercial").HasMin(0L);
+
+
+        modelBuilder.Entity<ControladoShoppingModel>(entity =>
+        {
+            entity.HasKey(e => new { e.NumRequisicao, e.Barcode });
+
+            entity.Property(e => e.Barcode)
+                  .HasMaxLength(15);
+
+            entity.Property(e => e.InseridoPor)
+                  .HasMaxLength(50);
+
+            entity.Property(e => e.InseridoEm)
+                  .HasColumnType("timestamp without time zone");
+
+            entity.Property(e => e.Retorno)
+                  .HasMaxLength(30);
+
+            entity.ToTable("tbl_controlado_shopping", "producao");
+        });
+
+        modelBuilder.Entity<ControladoShoppingRetornoModel>(builder =>
+        {
+            builder.HasKey(x => new { x.Barcode, x.InseridoEm });
+
+            builder.Property(x => x.Barcode)
+                .HasColumnName("barcode")
+                .HasMaxLength(15)
+                .IsRequired();
+
+            builder.Property(x => x.InseridoPor)
+                .HasColumnName("inserido_por")
+                .HasMaxLength(50)
+                .HasDefaultValueSql("current_user()");
+
+            builder.Property(x => x.InseridoEm)
+                .HasColumnName("inserido_em")
+                .HasColumnType("timestamp without time zone")
+                .HasDefaultValueSql("now()")
+                .IsRequired();
+        });
 
         OnModelCreatingPartial(modelBuilder);
     }
