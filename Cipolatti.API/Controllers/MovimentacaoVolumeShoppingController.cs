@@ -82,7 +82,7 @@ namespace Cipolatti.API.Controllers
         [HttpGet("Volume")]
         public async Task<ActionResult<IEnumerable<QryLookup>>> GetVolume(string qrcode)
         {
-            return Ok(await _context.QryLookup.Where(x => x.Qrcode == qrcode).FirstOrDefaultAsync());
+            return Ok(await _context.QryLookup.Where(x => x.Qrcode.Contains(qrcode)).FirstOrDefaultAsync());
         }
 
 
