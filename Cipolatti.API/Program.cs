@@ -18,7 +18,13 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
+/*
+builder.Services.AddOpenApiDocument(config =>
+{
+    config.Title = "API Cipolatti";
+    config.Version = "v1";
+});
+*/
 builder.Services.AddScoped<IAprovadoRepository, AprovadoRepository>();
 builder.Services.AddScoped<ILookupRepository, LookupRepository>();
 builder.Services.AddScoped<IConfCargaGeral, ConfCargaGeralRepository>();
@@ -37,6 +43,9 @@ if (app.Environment.IsProduction() || app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
+
+    //app.UseOpenApi();       // Gera /swagger/v1/swagger.json
+    //app.UseSwaggerUi3();    // Interface Swagger
 }
 
 

@@ -50,6 +50,8 @@ public partial class CipolattiContext : DbContext
 
     public DbSet<ControladoShoppingRetornoModel> ControladoShoppingRetorno { get; set; }
 
+    public DbSet<DetalheRequisicaoModel> RequisicaoDetalhes { get; set; }
+
 
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

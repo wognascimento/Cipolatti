@@ -1,9 +1,9 @@
-﻿using Cipolatti.API.Interfaces;
-using Cipolatti.API.Models;
+﻿using Cipolatti.API.Models;
+using Cipolatti.API.Models.DTO;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using System;
 
 namespace Cipolatti.API.Controllers;
 
@@ -13,6 +13,7 @@ public class VolumeControladoController : Controller
 {
     //private readonly IVolumeControladoRepository _volumeControladoRepository;
     private readonly CipolattiContext _context;
+    private readonly string _connectionString = "Host=localhost;Port=5432;Database=seubanco;Username=seuusuario;Password=suasenha";
 
     public VolumeControladoController(CipolattiContext context)
     {
@@ -53,12 +54,78 @@ public class VolumeControladoController : Controller
             InseridoEm = r.InseridoEm
         }).ToList();
 
+        //var barcods = requisicoes.Select(r => r.Barcode ).ToList();
+        var barcodes = requisicoes.Select(r => r.Barcode).ToArray();
         await using var transaction = await _context.Database.BeginTransactionAsync();
 
         try
         {
             _context.ControladoShopping.AddRange(entidades);
             await _context.SaveChangesAsync();
+
+            var req = entidades.FirstOrDefault();
+
+            string sql = $@"
+                        SELECT 
+                            producao.tbl_barcodes.barcode, 
+                            producao.tbl_etiqueta_zebra.codigo, 
+                            producao.tbl_etiqueta_zebra.codcompladicional
+                        FROM producao.tbl_barcodes 
+                        INNER JOIN producao.tbl_etiqueta_zebra ON producao.tbl_barcodes.codigo = producao.tbl_etiqueta_zebra.codigo
+                        WHERE producao.tbl_barcodes.barcode = ANY (@Barcodes);
+                   ";
+
+
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+
+            IConfiguration config = builder.Build();
+
+            string connStr = config.GetConnectionString("DefaultConnection");
+
+            using var connection = new NpgsqlConnection(connStr);
+            connection.Open();
+            var produtos = connection.Query<ProdutoControladoDTO>(sql, new { Barcodes = barcodes }).ToList();
+
+            var produtosReq = produtos
+                  .GroupBy(x => new { x.codcompladicional })
+                  .Select(g => new ProdutoRequisicaoControladoDTO
+                  {
+                      codcompladicional = g.Key.codcompladicional,
+                      quantidade = g.Count(),
+                  }).ToList();
+
+
+
+            foreach (var model in produtosReq)
+            {
+                //await Task.Run(() => vm.BaixaReceitaAsync(item));
+                
+                var detReq = await _context.RequisicaoDetalhes.Where(r => r.num_requisicao == req.NumRequisicao && r.codcompladicional == model.codcompladicional).FirstOrDefaultAsync();
+                if (detReq != null)
+                {
+                    detReq.codcompladicional = model.codcompladicional;
+                    detReq.quantidade = model.quantidade;
+                    detReq.data = DateTime.Now;
+                    detReq.alterado_por = Environment.UserName;
+                    _context.RequisicaoDetalhes.Update(detReq);
+                }
+                else
+                {
+                    var det = new DetalheRequisicaoModel
+                    {
+                        num_requisicao = req.NumRequisicao,
+                        codcompladicional = model.codcompladicional,
+                        quantidade = model.quantidade,
+                        data = DateTime.Now,
+                        alterado_por = Environment.UserName,
+                    };
+                    await _context.RequisicaoDetalhes.AddAsync(det);
+                }
+                await _context.SaveChangesAsync();
+            }
+
 
             await transaction.CommitAsync(); // Confirma as alterações
 
