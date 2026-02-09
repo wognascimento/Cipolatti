@@ -6,11 +6,29 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
+/*
 builder.Services.AddDbContext<CipolattiContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
+*/
+
+builder.Services.AddDbContext<CipolattiContext>(options =>
+{
+    options.UseNpgsql(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        npgsqlOptions =>
+        {
+            npgsqlOptions.CommandTimeout(180);
+
+            npgsqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorCodesToAdd: null
+            );
+        });
+});
+
 
 //builder.Services.AddHttpsRedirection(opt => opt.HttpsPort = 443);
 
@@ -35,6 +53,8 @@ builder.Services.AddScoped<IFuncionarioRepository, FuncionarioRepository>();
 builder.Services.AddScoped<IAtendentesAlmoxRepository, AtendentesAlmoxRepository>();
 builder.Services.AddScoped<IDescricoesRepository, DescricoesRepository>();
 builder.Services.AddScoped<ISaidaAlmoxRepository, SaidaAlmoxRepository>();
+
+
 
 var app = builder.Build();
 

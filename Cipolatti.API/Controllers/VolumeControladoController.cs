@@ -157,6 +157,7 @@ public class VolumeControladoController : Controller
         }
     }
 
+    /*
     [HttpPost("ControladosRetorno")]
     public async Task<IActionResult> PostRetorno([FromBody] List<QRCodeEntrada> controlados)
     {
@@ -206,5 +207,70 @@ public class VolumeControladoController : Controller
             });
         }
     }
+    */
+    [HttpPost("ControladosRetorno")]
+    public async Task<IActionResult> PostRetorno([FromBody] List<QRCodeEntrada> controlados)
+    {
+        if (controlados == null || controlados.Count == 0)
+            return BadRequest("Lista de controlados está vazia.");
+
+        const int batchSize = 100;
+        int inseridos = 0;
+
+        try
+        {
+            for (int i = 0; i < controlados.Count; i += batchSize)
+            {
+                var lote = controlados
+                    .Skip(i)
+                    .Take(batchSize)
+                    .ToList();
+
+                foreach (var item in lote)
+                {
+                    var sql = @"
+                    INSERT INTO producao.tbl_controlado_shopping_retorno
+                        (barcode, inserido_em, inserido_por)
+                    VALUES
+                        (@barcode, @inserido_em, @inserido_por)
+                    ON CONFLICT (barcode, inserido_em) DO NOTHING;
+                ";
+
+                    var linhas = await _context.Database.ExecuteSqlRawAsync(
+                        sql,
+                        new Npgsql.NpgsqlParameter("@barcode", item.Barcode),
+                        new Npgsql.NpgsqlParameter("@inserido_em", item.InseridoEm),
+                        new Npgsql.NpgsqlParameter("@inserido_por", item.InseridoPor)
+                    );
+
+                    inseridos += linhas; // 0 ou 1
+                }
+            }
+
+            return Ok(new
+            {
+                sucesso = true,
+                inseridos
+            });
+        }
+        catch (TimeoutException)
+        {
+            return StatusCode(504, new
+            {
+                sucesso = false,
+                erro = "Tempo excedido ao comunicar com o banco de dados."
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new
+            {
+                sucesso = false,
+                erro = "Erro interno no servidor.",
+                mensagem = ex.Message
+            });
+        }
+    }
+
 }
 
