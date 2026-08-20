@@ -36,26 +36,31 @@ namespace Cipolatti.API.Controllers
                 return BadRequest("Nenhum dado recebido para inserção.");
             }
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
-            {
-                //_context.TSaidaAlmox.Add(saidas);
-                //var ultimoRegistro = _context.TSaidaAlmox.OrderByDescending(e => e.CodMovimentacao).FirstOrDefault();
-                //int novoId = (int)((ultimoRegistro != null) ? ultimoRegistro.CodMovimentacao + 1 : 1);
-                foreach (var volume in volumes)
-                {
-                    _context.TblMovimentacaoVolumeShopping.Add(volume);
-                }
-                await _context.SaveChangesAsync();
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-                await transaction.CommitAsync();
-                return Ok("Volume(s) endereçado(s) com sucesso!");
-            }
-            catch (Exception ex)
+            return await strategy.ExecuteAsync<ActionResult>(async () =>
             {
-                await transaction.RollbackAsync();
-                return StatusCode(500, "Erro ao executar operação transacional");
-            }
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
+                {
+                    //_context.TSaidaAlmox.Add(saidas);
+                    //var ultimoRegistro = _context.TSaidaAlmox.OrderByDescending(e => e.CodMovimentacao).FirstOrDefault();
+                    //int novoId = (int)((ultimoRegistro != null) ? ultimoRegistro.CodMovimentacao + 1 : 1);
+                    foreach (var volume in volumes)
+                    {
+                        _context.TblMovimentacaoVolumeShopping.Add(volume);
+                    }
+                    await _context.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+                    return Ok("Volume(s) endereçado(s) com sucesso!");
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(500, "Erro ao executar operação transacional");
+                }
+            });
             /*
             var volume = await _context.TblMovimentacaoVolumeShopping.Where(x => x.BarcodeVolume == endercoVolume.BarcodeVolume).FirstOrDefaultAsync();
             if (volume == null)

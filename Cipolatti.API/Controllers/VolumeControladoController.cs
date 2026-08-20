@@ -56,16 +56,20 @@ public class VolumeControladoController : Controller
 
         //var barcods = requisicoes.Select(r => r.Barcode ).ToList();
         var barcodes = requisicoes.Select(r => r.Barcode).ToArray();
-        await using var transaction = await _context.Database.BeginTransactionAsync();
+        var strategy = _context.Database.CreateExecutionStrategy();
 
-        try
+        return await strategy.ExecuteAsync<IActionResult>(async () =>
         {
-            _context.ControladoShopping.AddRange(entidades);
-            await _context.SaveChangesAsync();
+            await using var transaction = await _context.Database.BeginTransactionAsync();
 
-            var req = entidades.FirstOrDefault();
+            try
+            {
+                _context.ControladoShopping.AddRange(entidades);
+                await _context.SaveChangesAsync();
 
-            string sql = $@"
+                var req = entidades.First();
+
+                string sql = $@"
                         SELECT 
                             producao.tbl_barcodes.barcode, 
                             producao.tbl_etiqueta_zebra.codigo, 
@@ -76,85 +80,87 @@ public class VolumeControladoController : Controller
                    ";
 
 
-            var builder = new ConfigurationBuilder()
-                .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
+                var builder = new ConfigurationBuilder()
+                    .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
+                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 
-            IConfiguration config = builder.Build();
+                IConfiguration config = builder.Build();
 
-            string connStr = config.GetConnectionString("DefaultConnection");
+                string connStr = config.GetConnectionString("DefaultConnection")
+                    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' não configurada.");
 
-            using var connection = new NpgsqlConnection(connStr);
-            connection.Open();
-            var produtos = connection.Query<ProdutoControladoDTO>(sql, new { Barcodes = barcodes }).ToList();
+                using var connection = new NpgsqlConnection(connStr);
+                connection.Open();
+                var produtos = connection.Query<ProdutoControladoDTO>(sql, new { Barcodes = barcodes }).ToList();
 
-            var produtosReq = produtos
-                  .GroupBy(x => new { x.codcompladicional })
-                  .Select(g => new ProdutoRequisicaoControladoDTO
-                  {
-                      codcompladicional = g.Key.codcompladicional,
-                      quantidade = g.Count(),
-                  }).ToList();
+                var produtosReq = produtos
+                      .GroupBy(x => new { x.codcompladicional })
+                      .Select(g => new ProdutoRequisicaoControladoDTO
+                      {
+                          codcompladicional = g.Key.codcompladicional,
+                          quantidade = g.Count(),
+                      }).ToList();
 
 
 
-            foreach (var model in produtosReq)
-            {
-                //await Task.Run(() => vm.BaixaReceitaAsync(item));
-                
-                var detReq = await _context.RequisicaoDetalhes.Where(r => r.num_requisicao == req.NumRequisicao && r.codcompladicional == model.codcompladicional).FirstOrDefaultAsync();
-                if (detReq != null)
+                foreach (var model in produtosReq)
                 {
-                    detReq.codcompladicional = model.codcompladicional;
-                    detReq.quantidade = model.quantidade;
-                    detReq.data = DateTime.Now;
-                    detReq.alterado_por = Environment.UserName;
-                    _context.RequisicaoDetalhes.Update(detReq);
-                }
-                else
-                {
-                    var det = new DetalheRequisicaoModel
+                    //await Task.Run(() => vm.BaixaReceitaAsync(item));
+
+                    var detReq = await _context.RequisicaoDetalhes.Where(r => r.num_requisicao == req.NumRequisicao && r.codcompladicional == model.codcompladicional).FirstOrDefaultAsync();
+                    if (detReq != null)
                     {
-                        num_requisicao = req.NumRequisicao,
-                        codcompladicional = model.codcompladicional,
-                        quantidade = model.quantidade,
-                        data = DateTime.Now,
-                        alterado_por = Environment.UserName,
-                    };
-                    await _context.RequisicaoDetalhes.AddAsync(det);
+                        detReq.codcompladicional = model.codcompladicional;
+                        detReq.quantidade = model.quantidade;
+                        detReq.data = DateTime.Now;
+                        detReq.alterado_por = Environment.UserName;
+                        _context.RequisicaoDetalhes.Update(detReq);
+                    }
+                    else
+                    {
+                        var det = new DetalheRequisicaoModel
+                        {
+                            num_requisicao = req.NumRequisicao,
+                            codcompladicional = model.codcompladicional,
+                            quantidade = model.quantidade,
+                            data = DateTime.Now,
+                            alterado_por = Environment.UserName,
+                        };
+                        await _context.RequisicaoDetalhes.AddAsync(det);
+                    }
+                    await _context.SaveChangesAsync();
                 }
-                await _context.SaveChangesAsync();
+
+
+                await transaction.CommitAsync(); // Confirma as alterações
+
+                return Ok(new { sucesso = true, inseridos = entidades.Count });
             }
-
-
-            await transaction.CommitAsync(); // Confirma as alterações
-
-            return Ok(new { sucesso = true, inseridos = entidades.Count });
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
-        {
-            await transaction.RollbackAsync(); // Desfaz alterações em caso de erro
-
-            return BadRequest(new
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
             {
-                sucesso = false,
-                erro = "Erro ao salvar no banco de dados.",
-                codigo = pgEx.SqlState,
-                mensagem = pgEx.MessageText,
-                onde = pgEx.Where
-            });
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync(); // Desfaz alterações genéricas
+                await transaction.RollbackAsync(); // Desfaz alterações em caso de erro
 
-            return StatusCode(500, new
+                return BadRequest(new
+                {
+                    sucesso = false,
+                    erro = "Erro ao salvar no banco de dados.",
+                    codigo = pgEx.SqlState,
+                    mensagem = pgEx.MessageText,
+                    onde = pgEx.Where
+                });
+            }
+            catch (Exception ex)
             {
-                sucesso = false,
-                erro = "Erro interno no servidor.",
-                mensagem = ex.Message
-            });
-        }
+                await transaction.RollbackAsync(); // Desfaz alterações genéricas
+
+                return StatusCode(500, new
+                {
+                    sucesso = false,
+                    erro = "Erro interno no servidor.",
+                    mensagem = ex.Message
+                });
+            }
+        });
     }
 
     /*

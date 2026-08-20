@@ -23,30 +23,41 @@ namespace Cipolatti.API.Controllers
                 return BadRequest("Nenhum dado recebido para inserção.");
             }
 
-            using var transaction = await _context.Database.BeginTransactionAsync();
-            try
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync<ActionResult>(async () =>
             {
-                //_context.TSaidaAlmox.Add(saidas);
-                var ultimoRegistro = _context.TSaidaAlmox.OrderByDescending(e => e.CodMovimentacao).FirstOrDefault();
-                int novoId = (int)((ultimoRegistro != null) ? ultimoRegistro.CodMovimentacao + 1 : 1);
-                foreach (var saida in saidas)
+                await using var transaction = await _context.Database.BeginTransactionAsync();
+                try
                 {
-                    var barcode = await _context.TblBarcodes.FirstOrDefaultAsync(b => b.Codigo == saida.Codcompladicional);
-                    saida.CodMovimentacao = novoId;
-                    saida.Barcode = barcode.Barcode;
-                    _context.TSaidaAlmox.Add(saida);
+                    //_context.TSaidaAlmox.Add(saidas);
+                    var ultimoRegistro = await _context.TSaidaAlmox.OrderByDescending(e => e.CodMovimentacao).FirstOrDefaultAsync();
+                    int novoId = (ultimoRegistro?.CodMovimentacao ?? 0) + 1;
+                    foreach (var saida in saidas)
+                    {
+                        var barcode = await _context.TblBarcodes.FirstOrDefaultAsync(b => b.Codigo == saida.Codcompladicional);
+                        if (barcode == null)
+                        {
+                            await transaction.RollbackAsync();
+                            return BadRequest($"Barcode não encontrado para o código {saida.Codcompladicional}.");
+                        }
+
+                        saida.CodMovimentacao = novoId;
+                        saida.Barcode = barcode.Barcode;
+                        _context.TSaidaAlmox.Add(saida);
+                    }
+                    await _context.SaveChangesAsync();
+
+                    await transaction.CommitAsync();
+                    return Ok("Movimentação de Saída concluída com sucesso");
+
                 }
-                await _context.SaveChangesAsync();
-
-                await transaction.CommitAsync();
-                return Ok("Movimentação de Saída concluída com sucesso");
-
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync();
-                return StatusCode(500, "Erro ao executar operação transacional");
-            }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    return StatusCode(500, "Erro ao executar operação transacional");
+                }
+            });
 
         }
     }
