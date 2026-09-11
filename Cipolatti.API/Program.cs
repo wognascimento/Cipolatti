@@ -1,81 +1,97 @@
-using Cipolatti.API.Interfaces;
-using Cipolatti.API.Models;
-using Cipolatti.API.Repositories;
-using Microsoft.EntityFrameworkCore;
+using System.Text;
+using Cipolatti.API.Infrastructure;
+using Dapper;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.IdentityModel.Tokens;
+using Npgsql;
+using Cipolatti.API.Services;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("Configure ConnectionStrings__DefaultConnection por variável de ambiente ou Secret Manager.");
 
-// Add services to the container.
-/*
-builder.Services.AddDbContext<CipolattiContext>(options =>
+var signingKey = builder.Configuration["Jwt:SigningKey"];
+if (string.IsNullOrWhiteSpace(signingKey) || Encoding.UTF8.GetByteCount(signingKey) < 32)
+    throw new InvalidOperationException("Configure Jwt__SigningKey com pelo menos 32 bytes fora do repositório.");
+
+DefaultTypeMap.MatchNamesWithUnderscores = true;
+var dataProtectionPath=Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath,"storage","keys"));
+Directory.CreateDirectory(dataProtectionPath);
+builder.Services.AddDataProtection().SetApplicationName("Cipolatti.API").PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath));
+builder.Services.AddSingleton(NpgsqlDataSource.Create(connectionString));
+builder.Services.AddSingleton<IDbConnectionFactory, NpgsqlConnectionFactory>();
+builder.Services.AddSingleton<IPrinterService, TscPrinterService>();
+builder.Services.AddScoped<ICatalogoService, CatalogoService>();
+builder.Services.Configure<CatalogoStorageOptions>(builder.Configuration.GetSection("CatalogoStorage"));
+builder.Services.AddSingleton<IFileStorage, LocalFileStorage>();
+builder.Services.AddScoped<ICatalogoAdminService, CatalogoAdminService>();
+builder.Services.AddSingleton<IPdfJobQueue, PdfJobQueue>();
+builder.Services.AddScoped<IPdfRenderer, PdfiumRenderer>();
+builder.Services.AddScoped<ICatalogoPdfAdminService, CatalogoPdfAdminService>();
+builder.Services.AddScoped<ICatalogoVideoAdminService, CatalogoVideoAdminService>();
+builder.Services.Configure<YoutubeOptions>(builder.Configuration.GetSection("Youtube"));
+builder.Services.Configure<AdOptions>(builder.Configuration.GetSection("Ad"));
+builder.Services.AddScoped<IAdAuthenticationService, AdAuthenticationService>();
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
 });
-*/
-
-builder.Services.AddDbContext<CipolattiContext>(options =>
-{
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("DefaultConnection"),
-        npgsqlOptions =>
+builder.Services.AddRateLimiter(options => options.AddPolicy("CatalogoLogin", context =>
+    RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
         {
-            npgsqlOptions.CommandTimeout(180);
-
-            npgsqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(10),
-                errorCodesToAdd: null
-            );
-        });
-});
-
-
-//builder.Services.AddHttpsRedirection(opt => opt.HttpsPort = 443);
-
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        })));
+builder.Services.AddHttpClient("youtube");
+builder.Services.AddScoped<IYoutubeService,YoutubeService>();
+builder.Services.AddHostedService<PdfProcessingWorker>();
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
+builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("postgresql");
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-/*
-builder.Services.AddOpenApiDocument(config =>
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
 {
-    config.Title = "API Cipolatti";
-    config.Version = "v1";
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey))
+    };
 });
-*/
-builder.Services.AddScoped<IAprovadoRepository, AprovadoRepository>();
-builder.Services.AddScoped<ILookupRepository, LookupRepository>();
-builder.Services.AddScoped<IConfCargaGeral, ConfCargaGeralRepository>();
-builder.Services.AddScoped<IMovimentacaoVolumeShoppingRepository, MovimentacaoVolumeShoppingRepository>();
-builder.Services.AddScoped<IEnderecamentoGalpaoRepository, EnderecamentoGalpaoRepository>();
-builder.Services.AddScoped<IVolumeControladoRepository, VolumeControladoRepository>();
-builder.Services.AddScoped<IFuncionarioRepository, FuncionarioRepository>();
-builder.Services.AddScoped<IAtendentesAlmoxRepository, AtendentesAlmoxRepository>();
-builder.Services.AddScoped<IDescricoesRepository, DescricoesRepository>();
-builder.Services.AddScoped<ISaidaAlmoxRepository, SaidaAlmoxRepository>();
-
-
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("CatalogoAdmin", policy => policy.RequireAuthenticatedUser().RequireAssertion(context =>
+        context.User.IsInRole("CatalogoAdmin") ||
+        context.User.HasClaim("catalogo_admin", "true") ||
+        context.User.FindAll("scope").SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Contains("catalogo.admin", StringComparer.Ordinal)))
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
 var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsProduction() || app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-
-    //app.UseOpenApi();       // Gera /swagger/v1/swagger.json
-    //app.UseSwaggerUi3();    // Interface Swagger
-}
-
-
-
+app.UseForwardedHeaders();
+app.UseExceptionHandler();
+app.UseSwagger();
+app.UseSwaggerUI();
 app.UseHttpsRedirection();
-
 app.UseAuthentication();
-
 app.UseAuthorization();
-
+app.UseRateLimiter();
+app.MapHealthChecks("/health").AllowAnonymous();
 app.MapControllers();
-
 app.Run();
+
+public partial class Program;

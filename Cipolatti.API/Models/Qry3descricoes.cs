@@ -4,11 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace Cipolatti.API.Models;
 
-[Keyless]
 public partial class Qry3descricoes
 {
     [Column("planilha")]
@@ -74,7 +72,6 @@ public partial class Qry3descricoes
     public int? Codigo { get; set; }
 
     [Column("saldo_estoque")]
-    [Precision(12, 2)]
     public decimal? SaldoEstoque { get; set; }
 
     [Column("classe_compra")]
@@ -84,15 +81,12 @@ public partial class Qry3descricoes
     public float? EstoqueMin { get; set; }
 
     [Column("m3")]
-    [Precision(12, 2)]
     public decimal? M3 { get; set; }
 
     [Column("pl")]
-    [Precision(12, 2)]
     public decimal? Pl { get; set; }
 
     [Column("pb")]
-    [Precision(12, 2)]
     public decimal? Pb { get; set; }
 
     [Column("estoque_inicial")]

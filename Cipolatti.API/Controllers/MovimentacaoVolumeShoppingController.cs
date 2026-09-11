@@ -1,95 +1,40 @@
-﻿using Cipolatti.API.Interfaces;
+using Cipolatti.API.Infrastructure;
 using Cipolatti.API.Models;
-using Cipolatti.API.Repositories;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Collections.ObjectModel;
+namespace Cipolatti.API.Controllers;
 
-namespace Cipolatti.API.Controllers
+[ApiController, Route("api/[controller]")]
+public sealed class MovimentacaoVolumeShoppingController(IDbConnectionFactory db) : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class MovimentacaoVolumeShoppingController : Controller
+    [HttpPost("GravarVolume")]
+    public async Task<ActionResult> Insert([FromBody] List<TblMovimentacaoVolumeShopping> volumes, CancellationToken ct)
     {
-        private readonly IMovimentacaoVolumeShoppingRepository _movimentacaoVolumeShoppingRepository;
-        private readonly CipolattiContext _context;
-
-        /*
-        public MovimentacaoVolumeShoppingController(IMovimentacaoVolumeShoppingRepository movimentacaoVolumeShoppingRepository)
+        if (volumes.Count == 0) return ValidationProblem("Informe ao menos um volume.");
+        await using var connection = await db.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        foreach (var volume in volumes)
         {
-            _movimentacaoVolumeShoppingRepository = movimentacaoVolumeShoppingRepository;
+            var (sql, parameters) = DapperEntityCommands.Insert(volume);
+            await connection.ExecuteAsync(new CommandDefinition(sql, parameters, transaction, cancellationToken: ct));
         }
-        */
+        await transaction.CommitAsync(ct);
+        return Created(string.Empty, new { inseridos = volumes.Count });
+    }
 
-        public MovimentacaoVolumeShoppingController(CipolattiContext context)
-        {
-            _context = context;
-        }
+    [HttpGet("Endereco")]
+    public async Task<ActionResult<QryEnderecamentoGalpao>> Endereco(string barcode, CancellationToken ct)
+    {
+        await using var connection = await db.OpenConnectionAsync(ct);
+        var item = await connection.QuerySingleOrDefaultAsync<QryEnderecamentoGalpao>(new CommandDefinition("SELECT * FROM expedicao.qry_enderecamento_galpao WHERE barcode = @barcode LIMIT 1", new { barcode }, cancellationToken: ct));
+        return item is null ? NotFound() : Ok(item);
+    }
 
-        [HttpPost("GravarVolume")]
-        //public async Task<ActionResult> CadastrarVolume(TblMovimentacaoVolumeShopping endercoVolume)
-        public async Task<ActionResult> CadastrarVolume([FromBody] ObservableCollection<TblMovimentacaoVolumeShopping> volumes)
-        {
-
-            if (volumes == null || volumes.Count == 0)
-            {
-                return BadRequest("Nenhum dado recebido para inserção.");
-            }
-
-            var strategy = _context.Database.CreateExecutionStrategy();
-
-            return await strategy.ExecuteAsync<ActionResult>(async () =>
-            {
-                await using var transaction = await _context.Database.BeginTransactionAsync();
-                try
-                {
-                    //_context.TSaidaAlmox.Add(saidas);
-                    //var ultimoRegistro = _context.TSaidaAlmox.OrderByDescending(e => e.CodMovimentacao).FirstOrDefault();
-                    //int novoId = (int)((ultimoRegistro != null) ? ultimoRegistro.CodMovimentacao + 1 : 1);
-                    foreach (var volume in volumes)
-                    {
-                        _context.TblMovimentacaoVolumeShopping.Add(volume);
-                    }
-                    await _context.SaveChangesAsync();
-
-                    await transaction.CommitAsync();
-                    return Ok("Volume(s) endereçado(s) com sucesso!");
-                }
-                catch (Exception)
-                {
-                    await transaction.RollbackAsync();
-                    return StatusCode(500, "Erro ao executar operação transacional");
-                }
-            });
-            /*
-            var volume = await _context.TblMovimentacaoVolumeShopping.Where(x => x.BarcodeVolume == endercoVolume.BarcodeVolume).FirstOrDefaultAsync();
-            if (volume == null)
-            {
-                _context.TblMovimentacaoVolumeShopping.Add(endercoVolume);
-                bool save = await _context.SaveChangesAsync() > 0;
-                if (save)
-                {
-                    return Ok("Volume enviado com sucesso!");
-                }
-
-                return BadRequest("Ocorreu um erro ao enviar o volume.");
-            }
-            return Ok("Nada a fazer.");
-            */
-        }
-
-        [HttpGet("Endereco")]
-        public async Task<ActionResult<IEnumerable<QryEnderecamentoGalpao>>> GetEndereco(string Barcode)
-        {
-            return Ok(await _context.QryEnderecamentoGalpao.Where(x => x.Barcode == Barcode).FirstOrDefaultAsync());
-        }
-
-        [HttpGet("Volume")]
-        public async Task<ActionResult<IEnumerable<QryLookup>>> GetVolume(string qrcode)
-        {
-            return Ok(await _context.QryLookup.Where(x => x.Qrcode.Contains(qrcode)).FirstOrDefaultAsync());
-        }
-
-
+    [HttpGet("Volume")]
+    public async Task<ActionResult<QryLookup>> Volume(string qrcode, CancellationToken ct)
+    {
+        await using var connection = await db.OpenConnectionAsync(ct);
+        var item = await connection.QuerySingleOrDefaultAsync<QryLookup>(new CommandDefinition("SELECT * FROM expedicao.qry_lookup WHERE qrcode = @qrcode LIMIT 1", new { qrcode }, cancellationToken: ct));
+        return item is null ? NotFound() : Ok(item);
     }
 }

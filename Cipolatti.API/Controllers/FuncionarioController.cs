@@ -1,25 +1,17 @@
-﻿using Cipolatti.API.Interfaces;
+using Cipolatti.API.Infrastructure;
 using Cipolatti.API.Models;
-using Cipolatti.API.Repositories;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
+namespace Cipolatti.API.Controllers;
 
-namespace Cipolatti.API.Controllers
+[ApiController, Route("api/[controller]")]
+public sealed class FuncionarioController(IDbConnectionFactory db) : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class FuncionarioController : Controller
+    [HttpGet("SelecionarByQrcode")]
+    public async Task<ActionResult<Funcionarios>> Get([FromQuery] string qrcode, CancellationToken ct)
     {
-        private readonly IFuncionarioRepository _funcionarioRepository;
-
-        public FuncionarioController(IFuncionarioRepository funcionarioRepository)
-        {
-            _funcionarioRepository = funcionarioRepository;
-        }
-
-        [HttpGet("SelecionarByQrcode")]
-        public async Task<ActionResult<IEnumerable<Funcionarios>>> GetSelecionarByQrcode(string qrcode)
-        {
-            return Ok(await _funcionarioRepository.SelecionarByQrcode(qrcode));
-        }
+        await using var connection = await db.OpenConnectionAsync(ct);
+        var item = await connection.QuerySingleOrDefaultAsync<Funcionarios>(new CommandDefinition("SELECT * FROM ht.funcionarios WHERE qrcode = @qrcode LIMIT 1", new { qrcode }, cancellationToken: ct));
+        return item is null ? NotFound() : Ok(item);
     }
 }

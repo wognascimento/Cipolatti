@@ -4,11 +4,9 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace Cipolatti.API.Models;
 
-[Keyless]
 public partial class QryAprovados
 {
     [Column("ordem")]

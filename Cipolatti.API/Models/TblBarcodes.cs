@@ -4,12 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace Cipolatti.API.Models;
 
 [Table("tbl_barcodes", Schema = "producao")]
-[Index("Barcode", Name = "tbl_barcodes_barcode_key", IsUnique = true)]
 public partial class TblBarcodes
 {
     [Required]

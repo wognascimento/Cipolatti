@@ -1,64 +1,32 @@
-﻿using Cipolatti.API.Models;
+using Cipolatti.API.Infrastructure;
+using Cipolatti.API.Models;
+using Dapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
+namespace Cipolatti.API.Controllers;
 
-namespace Cipolatti.API.Controllers
+[ApiController, Route("api/[controller]")]
+public sealed class SaidaAlmoxController(IDbConnectionFactory db) : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class SaidaAlmoxController : Controller
+    [HttpPost("almoxMovSaida")]
+    public async Task<ActionResult> Insert([FromBody] List<TSaidaAlmox> saidas, CancellationToken ct)
     {
-        private readonly CipolattiContext _context;
+        if (saidas.Count == 0) return ValidationProblem("Informe ao menos uma saída.");
+        var codigos = saidas.Where(x => x.Codcompladicional.HasValue).Select(x => x.Codcompladicional!.Value).Distinct().ToArray();
+        await using var connection = await db.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        var barcodes = (await connection.QueryAsync<(int Codigo, string Barcode)>(new CommandDefinition("SELECT codigo, barcode FROM producao.tbl_barcodes WHERE codigo = ANY(@codigos)", new { codigos }, transaction, cancellationToken: ct))).ToDictionary(x => x.Codigo, x => x.Barcode);
+        var ausentes = codigos.Where(x => !barcodes.ContainsKey(x)).ToArray();
+        if (ausentes.Length > 0) return BadRequest(new ProblemDetails { Title = "Barcodes não encontrados.", Extensions = { ["codigos"] = ausentes } });
 
-        public SaidaAlmoxController(CipolattiContext context)
+        var id = await connection.ExecuteScalarAsync<int>(new CommandDefinition("SELECT nextval('almoxarifado_jac.t_saida_almox_movimentacao_seq')", transaction: transaction, cancellationToken: ct));
+        foreach (var saida in saidas)
         {
-            _context = context;
+            saida.CodMovimentacao = id;
+            if (saida.Codcompladicional.HasValue) saida.Barcode = barcodes[saida.Codcompladicional.Value];
+            var (sql, parameters) = DapperEntityCommands.Insert(saida);
+            await connection.ExecuteAsync(new CommandDefinition(sql, parameters, transaction, cancellationToken: ct));
         }
-
-        [HttpPost("almoxMovSaida")]
-        public async Task<ActionResult> MovSaidaAlmox([FromBody] List<TSaidaAlmox> saidas)
-        {
-            if (saidas == null || !saidas.Any())
-            {
-                return BadRequest("Nenhum dado recebido para inserção.");
-            }
-
-            var strategy = _context.Database.CreateExecutionStrategy();
-
-            return await strategy.ExecuteAsync<ActionResult>(async () =>
-            {
-                await using var transaction = await _context.Database.BeginTransactionAsync();
-                try
-                {
-                    //_context.TSaidaAlmox.Add(saidas);
-                    var ultimoRegistro = await _context.TSaidaAlmox.OrderByDescending(e => e.CodMovimentacao).FirstOrDefaultAsync();
-                    int novoId = (ultimoRegistro?.CodMovimentacao ?? 0) + 1;
-                    foreach (var saida in saidas)
-                    {
-                        var barcode = await _context.TblBarcodes.FirstOrDefaultAsync(b => b.Codigo == saida.Codcompladicional);
-                        if (barcode == null)
-                        {
-                            await transaction.RollbackAsync();
-                            return BadRequest($"Barcode não encontrado para o código {saida.Codcompladicional}.");
-                        }
-
-                        saida.CodMovimentacao = novoId;
-                        saida.Barcode = barcode.Barcode;
-                        _context.TSaidaAlmox.Add(saida);
-                    }
-                    await _context.SaveChangesAsync();
-
-                    await transaction.CommitAsync();
-                    return Ok("Movimentação de Saída concluída com sucesso");
-
-                }
-                catch (Exception)
-                {
-                    await transaction.RollbackAsync();
-                    return StatusCode(500, "Erro ao executar operação transacional");
-                }
-            });
-
-        }
+        await transaction.CommitAsync(ct);
+        return Created(string.Empty, new { codMovimentacao = id, inseridos = saidas.Count });
     }
 }

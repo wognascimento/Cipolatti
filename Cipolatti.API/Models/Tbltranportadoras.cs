@@ -4,12 +4,10 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using Microsoft.EntityFrameworkCore;
 
 namespace Cipolatti.API.Models;
 
 [Table("tbltranportadoras", Schema = "operacional")]
-[Index("Nometransportadora", Name = "tbltranportadoras_nometransportadora_key", IsUnique = true)]
 public partial class Tbltranportadoras
 {
     [Key]

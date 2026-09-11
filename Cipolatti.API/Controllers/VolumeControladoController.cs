@@ -1,282 +1,55 @@
-﻿using Cipolatti.API.Models;
-using Cipolatti.API.Models.DTO;
+using Cipolatti.API.Infrastructure;
+using Cipolatti.API.Models;
 using Dapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Npgsql;
-
 namespace Cipolatti.API.Controllers;
 
-[ApiController]
-[Route("api/[controller]")]
-public class VolumeControladoController : Controller
+[ApiController, Route("api/[controller]")]
+public sealed class VolumeControladoController(IDbConnectionFactory db) : ControllerBase
 {
-    //private readonly IVolumeControladoRepository _volumeControladoRepository;
-    private readonly CipolattiContext _context;
-    private readonly string _connectionString = "Host=localhost;Port=5432;Database=seubanco;Username=seuusuario;Password=suasenha";
-
-    public VolumeControladoController(CipolattiContext context)
-    {
-        _context = context;
-    }
-
     [HttpPost("ReceberControlado")]
-    public async Task<ActionResult> ReceberControlado(TblVolumeControlado volumeControlado)
+    public async Task<ActionResult> Receive([FromBody] TblVolumeControlado item, CancellationToken ct)
     {
-        //var volume = await _volumeControladoRepository.SelecionarBySiglaByVolume(volumeControlado.Sigla, volumeControlado.Volume);
-        var volume = await _context.TblVolumeControlado.Where(x => x.Sigla == volumeControlado.Sigla && x.Volume == volumeControlado.Volume).FirstOrDefaultAsync();
-        if (volume == null)
-        {
-            //_volumeControladoRepository.Incluir(volumeControlado);
-            _context.TblVolumeControlado.Add(volumeControlado);
-            //if (await _volumeControladoRepository.SaveAllAsync())
-            if (await _context.SaveChangesAsync() > 0)
-            {
-                return Ok("Volume controlado enviado com sucesso!");
-            }
-
-            return BadRequest("Ocorreu um erro ao enviar o volume controlado.");
-        }
-        return Ok("Nada a fazer.");
+        const string sql = "INSERT INTO producao.tbl_volume_controlado (sigla, volume, conferido, recebido) VALUES (@Sigla, @Volume, @Conferido, @Recebido) ON CONFLICT DO NOTHING";
+        await using var connection = await db.OpenConnectionAsync(ct);
+        var inserted = await connection.ExecuteAsync(new CommandDefinition(sql, item, cancellationToken: ct));
+        return inserted == 0 ? Conflict(new ProblemDetails { Title = "Volume já registrado." }) : Created(string.Empty, item);
     }
 
     [HttpPost("ControladosRequisicao")]
-    public async Task<IActionResult> PostRequisicoes([FromBody] List<QRCodeRequisicao> requisicoes)
+    public async Task<ActionResult> Requisitions([FromBody] List<QRCodeRequisicao> requests, CancellationToken ct)
     {
-        if (requisicoes == null || requisicoes.Count == 0)
-            return BadRequest("Lista de requisições está vazia.");
+        if (requests.Count == 0) return ValidationProblem("Informe ao menos uma requisição.");
+        await using var connection = await db.OpenConnectionAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        const string insert = "INSERT INTO producao.tbl_controlado_shopping (num_requisicao, barcode, inserido_por, inserido_em) VALUES (@NumeroRequisicao, @Barcode, @InseridoPor, @InseridoEm) ON CONFLICT DO NOTHING";
+        var inserted = await connection.ExecuteAsync(new CommandDefinition(insert, requests, transaction, cancellationToken: ct));
 
-        var entidades = requisicoes.Select(r => new ControladoShoppingModel
+        foreach (var group in requests.GroupBy(x => x.NumeroRequisicao))
         {
-            NumRequisicao = r.NumeroRequisicao,
-            Barcode = r.Barcode,
-            InseridoPor = r.InseridoPor,
-            InseridoEm = r.InseridoEm
-        }).ToList();
-
-        //var barcods = requisicoes.Select(r => r.Barcode ).ToList();
-        var barcodes = requisicoes.Select(r => r.Barcode).ToArray();
-        var strategy = _context.Database.CreateExecutionStrategy();
-
-        return await strategy.ExecuteAsync<IActionResult>(async () =>
-        {
-            await using var transaction = await _context.Database.BeginTransactionAsync();
-
-            try
+            const string productsSql = "SELECT e.codcompladicional, count(*)::int AS quantidade FROM producao.tbl_barcodes b JOIN producao.tbl_etiqueta_zebra e ON e.codigo = b.codigo WHERE b.barcode = ANY(@barcodes) GROUP BY e.codcompladicional";
+            var products = await connection.QueryAsync<(long Codcompladicional, int Quantidade)>(new CommandDefinition(productsSql, new { barcodes = group.Select(x => x.Barcode).ToArray() }, transaction, cancellationToken: ct));
+            const string update = "UPDATE producao.t_detalhes_req SET quantidade = @Quantidade, data = CURRENT_TIMESTAMP, alterado_por = @User WHERE num_requisicao = @Request AND codcompladicional = @Codcompladicional";
+            const string add = "INSERT INTO producao.t_detalhes_req (num_requisicao, codcompladicional, quantidade, data, alterado_por) VALUES (@Request, @Codcompladicional, @Quantidade, CURRENT_TIMESTAMP, @User)";
+            foreach (var product in products)
             {
-                _context.ControladoShopping.AddRange(entidades);
-                await _context.SaveChangesAsync();
-
-                var req = entidades.First();
-
-                string sql = $@"
-                        SELECT 
-                            producao.tbl_barcodes.barcode, 
-                            producao.tbl_etiqueta_zebra.codigo, 
-                            producao.tbl_etiqueta_zebra.codcompladicional
-                        FROM producao.tbl_barcodes 
-                        INNER JOIN producao.tbl_etiqueta_zebra ON producao.tbl_barcodes.codigo = producao.tbl_etiqueta_zebra.codigo
-                        WHERE producao.tbl_barcodes.barcode = ANY (@Barcodes);
-                   ";
-
-
-                var builder = new ConfigurationBuilder()
-                    .SetBasePath(AppDomain.CurrentDomain.BaseDirectory)
-                    .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
-
-                IConfiguration config = builder.Build();
-
-                string connStr = config.GetConnectionString("DefaultConnection")
-                    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' não configurada.");
-
-                using var connection = new NpgsqlConnection(connStr);
-                connection.Open();
-                var produtos = connection.Query<ProdutoControladoDTO>(sql, new { Barcodes = barcodes }).ToList();
-
-                var produtosReq = produtos
-                      .GroupBy(x => new { x.codcompladicional })
-                      .Select(g => new ProdutoRequisicaoControladoDTO
-                      {
-                          codcompladicional = g.Key.codcompladicional,
-                          quantidade = g.Count(),
-                      }).ToList();
-
-
-
-                foreach (var model in produtosReq)
-                {
-                    //await Task.Run(() => vm.BaixaReceitaAsync(item));
-
-                    var detReq = await _context.RequisicaoDetalhes.Where(r => r.num_requisicao == req.NumRequisicao && r.codcompladicional == model.codcompladicional).FirstOrDefaultAsync();
-                    if (detReq != null)
-                    {
-                        detReq.codcompladicional = model.codcompladicional;
-                        detReq.quantidade = model.quantidade;
-                        detReq.data = DateTime.Now;
-                        detReq.alterado_por = Environment.UserName;
-                        _context.RequisicaoDetalhes.Update(detReq);
-                    }
-                    else
-                    {
-                        var det = new DetalheRequisicaoModel
-                        {
-                            num_requisicao = req.NumRequisicao,
-                            codcompladicional = model.codcompladicional,
-                            quantidade = model.quantidade,
-                            data = DateTime.Now,
-                            alterado_por = Environment.UserName,
-                        };
-                        await _context.RequisicaoDetalhes.AddAsync(det);
-                    }
-                    await _context.SaveChangesAsync();
-                }
-
-
-                await transaction.CommitAsync(); // Confirma as alterações
-
-                return Ok(new { sucesso = true, inseridos = entidades.Count });
+                var args = new { Request = group.Key, product.Codcompladicional, product.Quantidade, User = User.Identity?.Name ?? "api" };
+                if (await connection.ExecuteAsync(new CommandDefinition(update, args, transaction, cancellationToken: ct)) == 0)
+                    await connection.ExecuteAsync(new CommandDefinition(add, args, transaction, cancellationToken: ct));
             }
-            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
-            {
-                await transaction.RollbackAsync(); // Desfaz alterações em caso de erro
-
-                return BadRequest(new
-                {
-                    sucesso = false,
-                    erro = "Erro ao salvar no banco de dados.",
-                    codigo = pgEx.SqlState,
-                    mensagem = pgEx.MessageText,
-                    onde = pgEx.Where
-                });
-            }
-            catch (Exception ex)
-            {
-                await transaction.RollbackAsync(); // Desfaz alterações genéricas
-
-                return StatusCode(500, new
-                {
-                    sucesso = false,
-                    erro = "Erro interno no servidor.",
-                    mensagem = ex.Message
-                });
-            }
-        });
+        }
+        await transaction.CommitAsync(ct);
+        return Created(string.Empty, new { inseridos = inserted });
     }
 
-    /*
     [HttpPost("ControladosRetorno")]
-    public async Task<IActionResult> PostRetorno([FromBody] List<QRCodeEntrada> controlados)
+    public async Task<ActionResult> Returns([FromBody] List<QRCodeEntrada> items, CancellationToken ct)
     {
-        if (controlados == null || controlados.Count == 0)
-            return BadRequest("Lista de controlados está vazia.");
-
-        var entidades = controlados.Select(r => new ControladoShoppingRetornoModel
-        {
-            Barcode = r.Barcode,
-            InseridoPor = r.InseridoPor,
-            InseridoEm = r.InseridoEm
-        }).ToList();
-
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-
-        try
-        {
-            _context.ControladoShoppingRetorno.AddRange(entidades);
-            await _context.SaveChangesAsync();
-
-            await transaction.CommitAsync(); // Confirma as alterações
-
-            return Ok(new { sucesso = true, inseridos = entidades.Count });
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException pgEx)
-        {
-            await transaction.RollbackAsync(); // Desfaz alterações em caso de erro
-
-            return BadRequest(new
-            {
-                sucesso = false,
-                erro = "Erro ao salvar no banco de dados.",
-                codigo = pgEx.SqlState,
-                mensagem = pgEx.MessageText,
-                onde = pgEx.Where
-            });
-        }
-        catch (Exception ex)
-        {
-            await transaction.RollbackAsync(); // Desfaz alterações genéricas
-
-            return StatusCode(500, new
-            {
-                sucesso = false,
-                erro = "Erro interno no servidor.",
-                mensagem = ex.Message
-            });
-        }
+        if (items.Count == 0) return ValidationProblem("Informe ao menos um controlado.");
+        const string sql = "INSERT INTO producao.tbl_controlado_shopping_retorno (barcode, inserido_em, inserido_por) SELECT * FROM unnest(@Barcodes, @Dates, @Users) ON CONFLICT (barcode, inserido_em) DO NOTHING";
+        var args = new { Barcodes = items.Select(x => x.Barcode).ToArray(), Dates = items.Select(x => x.InseridoEm).ToArray(), Users = items.Select(x => x.InseridoPor).ToArray() };
+        await using var connection = await db.OpenConnectionAsync(ct);
+        var inserted = await connection.ExecuteAsync(new CommandDefinition(sql, args, cancellationToken: ct));
+        return Ok(new { inseridos = inserted });
     }
-    */
-    [HttpPost("ControladosRetorno")]
-    public async Task<IActionResult> PostRetorno([FromBody] List<QRCodeEntrada> controlados)
-    {
-        if (controlados == null || controlados.Count == 0)
-            return BadRequest("Lista de controlados está vazia.");
-
-        const int batchSize = 100;
-        int inseridos = 0;
-
-        try
-        {
-            for (int i = 0; i < controlados.Count; i += batchSize)
-            {
-                var lote = controlados
-                    .Skip(i)
-                    .Take(batchSize)
-                    .ToList();
-
-                foreach (var item in lote)
-                {
-                    var sql = @"
-                    INSERT INTO producao.tbl_controlado_shopping_retorno
-                        (barcode, inserido_em, inserido_por)
-                    VALUES
-                        (@barcode, @inserido_em, @inserido_por)
-                    ON CONFLICT (barcode, inserido_em) DO NOTHING;
-                ";
-
-                    var linhas = await _context.Database.ExecuteSqlRawAsync(
-                        sql,
-                        new Npgsql.NpgsqlParameter("@barcode", item.Barcode),
-                        new Npgsql.NpgsqlParameter("@inserido_em", item.InseridoEm),
-                        new Npgsql.NpgsqlParameter("@inserido_por", item.InseridoPor)
-                    );
-
-                    inseridos += linhas; // 0 ou 1
-                }
-            }
-
-            return Ok(new
-            {
-                sucesso = true,
-                inseridos
-            });
-        }
-        catch (TimeoutException)
-        {
-            return StatusCode(504, new
-            {
-                sucesso = false,
-                erro = "Tempo excedido ao comunicar com o banco de dados."
-            });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new
-            {
-                sucesso = false,
-                erro = "Erro interno no servidor.",
-                mensagem = ex.Message
-            });
-        }
-    }
-
 }
-
