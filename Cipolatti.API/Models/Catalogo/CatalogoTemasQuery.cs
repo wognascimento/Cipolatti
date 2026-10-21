@@ -15,6 +15,9 @@ public sealed class CatalogoTemasQuery
 
     public bool? Destaque { get; init; }
 
+    [StringLength(50)]
+    public string? FaixaPreco { get; init; }
+
     [Range(1, int.MaxValue)]
     public int Page { get; init; } = 1;
 
@@ -27,6 +30,6 @@ public sealed record CatalogoTemasFilter(
     int[] ConceptIds,
     bool MatchAll,
     bool? Destaque,
+    string? FaixaPreco,
     int Page,
     int PageSize);
-

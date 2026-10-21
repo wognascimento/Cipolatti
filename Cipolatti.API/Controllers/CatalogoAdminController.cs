@@ -65,6 +65,22 @@ public sealed class CatalogoAdminController(ICatalogoAdminService catalogo, ICat
         catch(InvalidDataException ex){return UnprocessableEntity(new ProblemDetails{Status=422,Title="Imagem inválida.",Detail=ex.Message});}
     }
 
+    [HttpPost("temas/{idTema:int}/capas")]
+    [RequestSizeLimit(200L * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit=200L * 1024 * 1024)]
+    public async Task<ActionResult<IReadOnlyCollection<AdminTemaCapaDto>>> AdicionarCapas(int idTema, List<IFormFile> arquivos, CancellationToken ct)
+    {
+        if (arquivos.Count == 0 || arquivos.Any(x => x.Length == 0)) return ValidationProblem("Informe ao menos uma imagem.");
+        var streams = arquivos.Select(x => ((Stream)x.OpenReadStream(), x.ContentType)).ToArray();
+        try { var items = await catalogo.AdicionarCapasAsync(idTema, streams, User.Identity?.Name, ct); return items is null ? NotFound() : Ok(items); }
+        catch (InvalidDataException ex) { return UnprocessableEntity(new ProblemDetails { Status=422, Title="Imagem inválida.", Detail=ex.Message }); }
+        finally { foreach (var item in streams) await item.Item1.DisposeAsync(); }
+    }
+
+    [HttpDelete("capas/{idTemaCapa:long}")]
+    public async Task<ActionResult> RemoverCapa(long idTemaCapa, CancellationToken ct) =>
+        await catalogo.RemoverCapaAsync(idTemaCapa, User.Identity?.Name, ct) ? NoContent() : NotFound();
+
     [HttpGet("temas/{idTema:int}/pdfs")]
     public async Task<ActionResult<IReadOnlyCollection<AdminTemaPdfDto>>> ListarPdfs(int idTema,CancellationToken ct)
     {var items=await pdfs.ListarAsync(idTema,ct);return items is null?NotFound():Ok(items);}
@@ -92,10 +108,10 @@ public sealed class CatalogoAdminController(ICatalogoAdminService catalogo, ICat
     [HttpPost("pdfs/{idPdf:long}/reprocessar")]
     public async Task<ActionResult> ReprocessarPdf(long idPdf,CancellationToken ct)=>await pdfs.ReprocessarAsync(idPdf,User.Identity?.Name,ct)?Accepted():NotFound();
 
-    [HttpPost("pdfs/{idPdf:long}/usar-primeira-pagina-como-capa")]
-    public async Task<ActionResult> UsarPrimeiraPaginaComoCapa(long idPdf,CancellationToken ct)
+    [HttpPost("pdfs/{idPdf:long}/adicionar-segunda-pagina-como-capa")]
+    public async Task<ActionResult> AdicionarSegundaPaginaComoCapa(long idPdf,CancellationToken ct)
     {
-        try { return await pdfs.UsarPrimeiraPaginaComoCapaAsync(idPdf,User.Identity?.Name,ct)?Ok(new { mensagem="A primeira página foi definida como capa." }):NotFound(); }
+        try { return await pdfs.AdicionarSegundaPaginaComoCapaAsync(idPdf,User.Identity?.Name,ct)?Ok(new { mensagem="A segunda página foi adicionada às capas." }):NotFound(); }
         catch (InvalidOperationException ex) { return UnprocessableEntity(new ProblemDetails { Status=422, Title="A capa ainda não está disponível.", Detail=ex.Message }); }
         catch (FileNotFoundException ex) { return UnprocessableEntity(new ProblemDetails { Status=422, Title="A capa ainda não está disponível.", Detail=ex.Message }); }
     }
@@ -116,7 +132,8 @@ public sealed class CatalogoAdminController(ICatalogoAdminService catalogo, ICat
     {try{var item=await videos.CriarAsync(idTema,request,User.Identity?.Name,ct);return item is null?NotFound():CreatedAtAction(nameof(ListarVideos),new{idTema},item);}catch(CatalogConflictException ex){return Conflict(new ProblemDetails{Status=409,Title="Video duplicado.",Detail=ex.Message});}catch(ArgumentException ex){return UnprocessableEntity(new ProblemDetails{Status=422,Title="Video invalido.",Detail=ex.Message});}}
 
     [HttpPost("temas/{idTema:int}/videos/upload")]
-    [RequestSizeLimit(150L*1024*1024)]
+    [RequestSizeLimit(1030L*1024*1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit=1030L*1024*1024)]
     public async Task<ActionResult<AdminTemaVideoDto>> UploadVideo(int idTema,[FromForm] YoutubeUploadRequest request,IFormFile arquivo,IFormFile? thumbnail,CancellationToken ct)
     {
         if(arquivo is null||arquivo.Length==0)return ValidationProblem("Informe o arquivo de vídeo.");

@@ -8,6 +8,8 @@ Os scripts sao aditivos e devem ser executados em ordem, com parada obrigatoria 
 4. `004_tema_pdf_pagina.sql`
 5. `005_tema_video.sql`
 
+O script `013_romaneio_fotos.sql` adiciona, no schema `expedicao`, o cadastro de dispositivos e o controle idempotente dos uploads de fotos de romaneio. Ele não altera a tabela legada `t_romaneio` e deve ser aplicado separadamente após autorização operacional.
+
 Para a Fase 2 do Catalogo Virtual, execute apenas `002` a `005` caso o script `001` ja tenha sido tratado pelo sistema existente.
 
 Exemplo com `psql`:
@@ -21,6 +23,21 @@ psql -v ON_ERROR_STOP=1 "$CONNECTION_STRING" \
 ```
 
 Cada arquivo possui sua propria transacao. Nenhum script contem `DROP`, `TRUNCATE`, exclusao ou alteracao de tabela legada.
+
+## exPonto
+
+O arquivo `011_exponto_schema.sql` pertence exclusivamente ao banco do exPonto. Nao o execute no banco corporativo da API Cipolatti. A API combinada usa duas conexoes independentes:
+
+- `ConnectionStrings__DefaultConnection`: banco corporativo da Cipolatti;
+- `ConnectionStrings__ExPonto`: banco `ponto_biometrico` do exPonto.
+
+Aplicacao inicial, separada e aditiva:
+
+```bash
+psql -v ON_ERROR_STOP=1 "$EXPONTO_CONNECTION_STRING" -f database/011_exponto_schema.sql
+```
+
+Depois configure `ExPonto__Jwt__Secret` com pelo menos 32 bytes. Quando `ConnectionStrings__ExPonto` nao estiver configurada, o modulo e suas rotas nao sao registrados.
 
 ## Permissoes
 

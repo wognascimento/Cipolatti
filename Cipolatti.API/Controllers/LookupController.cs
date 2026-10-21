@@ -1,16 +1,17 @@
 using Cipolatti.API.Infrastructure;
 using Cipolatti.API.Models;
 using Dapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 namespace Cipolatti.API.Controllers;
 
 [ApiController, Route("api/[controller]")]
 public sealed class LookupController(IDbConnectionFactory db) : ControllerBase
 {
-    [HttpGet("LookupBySigla")]
+    [AllowAnonymous, HttpGet("LookupBySigla")]
     public Task<ActionResult<IReadOnlyCollection<QryLookup>>> BySigla(string sigla, CancellationToken ct) => Query(sigla, null, ct);
 
-    [HttpGet("lookupBySiglaByCaminhao")]
+    [AllowAnonymous, HttpGet("lookupBySiglaByCaminhao")]
     public Task<ActionResult<IReadOnlyCollection<QryLookup>>> ByCaminhao(string sigla, string caminhao, CancellationToken ct) => Query(sigla, caminhao, ct);
 
     private async Task<ActionResult<IReadOnlyCollection<QryLookup>>> Query(string sigla, string? caminhao, CancellationToken ct)

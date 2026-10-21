@@ -15,10 +15,10 @@ public partial class TRomaneio
     public int CodRomaneiro { get; set; }
 
     [Column("data_carregamento")]
-    public DateTime DataCarregamento { get; set; }
+    public DateOnly DataCarregamento { get; set; }
 
     [Column("hora_chegada")]
-    public TimeSpan HoraChegada { get; set; }
+    public TimeOnly HoraChegada { get; set; }
 
     [Column("codtransportadora")]
     public int Codtransportadora { get; set; }
@@ -82,10 +82,10 @@ public partial class TRomaneio
     public string CondicaoCaminhao { get; set; }
 
     [Column("inicio_carregamento")]
-    public DateTime? InicioCarregamento { get; set; }
+    public TimeOnly? InicioCarregamento { get; set; }
 
     [Column("termino_carregamento")]
-    public DateTime? TerminoCarregamento { get; set; }
+    public TimeOnly? TerminoCarregamento { get; set; }
 
     [Column("numero_caminhao")]
     public int? NumeroCaminhao { get; set; }
@@ -146,22 +146,22 @@ public partial class TRomaneio
     public string LacreChegada { get; set; }
 
     [Column("hora_inicio_descarregamento")]
-    public DateTime? HoraInicioDescarregamento { get; set; }
+    public TimeOnly? HoraInicioDescarregamento { get; set; }
 
     [Column("hora_termino_descarregamento")]
-    public DateTime? HoraTerminoDescarregamento { get; set; }
+    public TimeOnly? HoraTerminoDescarregamento { get; set; }
 
     [Column("data_inicio_descarregamento")]
-    public DateTime? DataInicioDescarregamento { get; set; }
+    public DateOnly? DataInicioDescarregamento { get; set; }
 
     [Column("data_termino_descarregamento")]
-    public DateTime? DataTerminoDescarregamento { get; set; }
+    public DateOnly? DataTerminoDescarregamento { get; set; }
 
     [Column("data_saida_caminhao")]
-    public DateTime? DataSaidaCaminhao { get; set; }
+    public DateOnly? DataSaidaCaminhao { get; set; }
 
     [Column("hora_saida_caminhao")]
-    public DateTime? HoraSaidaCaminhao { get; set; }
+    public TimeOnly? HoraSaidaCaminhao { get; set; }
 
     [Column("data_hora_liberacao", TypeName = "timestamp without time zone")]
     public DateTime? DataHoraLiberacao { get; set; }

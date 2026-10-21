@@ -3,11 +3,11 @@ namespace Cipolatti.API.Infrastructure;
 public interface IFileStorage
 {
     Task<string> SaveCoverAsWebpAsync(int idTema, Stream content, CancellationToken ct);
+    Task<string> SaveGalleryCoverAsWebpAsync(int idTema, Stream content, CancellationToken ct);
     Task<string> SaveConceptAsWebpAsync(int idConceito, Stream content, CancellationToken ct);
     Task<StoredPdfFile> SavePdfOriginalAsync(int idTema, long idPdf, Stream content, CancellationToken ct);
     Task<StoredPdfPage> SavePdfPageAsync(int idTema, long idPdf, string version, int pageNumber,
         ReadOnlyMemory<byte> webp, int width, int height, CancellationToken ct);
-    Task<string> SaveCoverFromPdfPageAsync(int idTema, string pageRelativePath, CancellationToken ct);
     string GetLocalPath(string relativePath);
     Task<Stream?> OpenReadAsync(string relativePath, CancellationToken ct);
     Task PersistPdfJobAsync(PdfProcessingJob job, CancellationToken ct);

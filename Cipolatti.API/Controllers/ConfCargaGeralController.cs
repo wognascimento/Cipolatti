@@ -1,17 +1,18 @@
 using Cipolatti.API.Infrastructure;
 using Cipolatti.API.Models;
 using Dapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 namespace Cipolatti.API.Controllers;
 
 [ApiController, Route("api/[controller]")]
 public sealed class ConfCargaGeralController(IDbConnectionFactory db) : ControllerBase
 {
-    [HttpPost("GravarVolume")]
+    [AllowAnonymous, HttpPost("GravarVolume")]
     public Task<ActionResult> Volume([FromBody] TConfCargaGeral item, CancellationToken ct) =>
         Insert(item, "expedicao.t_conf_carga_geral", ct);
 
-    [HttpPost("GravarPreConferencia")]
+    [AllowAnonymous, HttpPost("GravarPreConferencia")]
     public Task<ActionResult> PreConferencia([FromBody] TPreConferencia item, CancellationToken ct) =>
         Insert(item, "expedicao.t_pre_conferencia", ct);
 

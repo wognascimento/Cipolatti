@@ -60,7 +60,7 @@ public sealed class YoutubeService(IDbConnectionFactory db,IHttpClientFactory cl
     public async Task<AdminTemaVideoDto> UploadVideoAsync(int idTema,YoutubeUploadRequest request,Stream video,string contentType,long length,Stream? thumbnail,string? thumbnailContentType,string? usuario,CancellationToken ct)
     {
         EnsureConfigured();
-        if(length<=0||length>150L*1024*1024)throw new ArgumentException("O vídeo deve ter entre 1 byte e 150 MB.");
+        if(length<=0||length>1024L*1024*1024)throw new ArgumentException("O vídeo deve ter entre 1 byte e 1 GB.");
         if(string.IsNullOrWhiteSpace(contentType)||!contentType.StartsWith("video/",StringComparison.OrdinalIgnoreCase))throw new ArgumentException("Envie um arquivo de vídeo válido.");
         if(request.PrivacyStatus is not("public" or "unlisted" or "private"))throw new ArgumentException("Privacidade inválida.");
         var title=request.Titulo.Trim();if(title.Length==0)throw new ArgumentException("Informe o título do vídeo.");

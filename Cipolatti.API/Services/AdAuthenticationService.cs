@@ -17,6 +17,7 @@ public sealed class AdOptions
     public string Domain { get; set; } = "";
     public string BaseDn { get; set; } = "";
     public string RequiredGroup { get; set; } = "";
+    public string[] RequiredGroups { get; set; } = [];
     public int TokenLifetimeMinutes { get; set; } = 480;
 }
 
@@ -51,8 +52,21 @@ public sealed class AdAuthenticationService(
             connection.SessionOptions.SecureSocketLayer = options.UseSsl;
             connection.Bind();
 
-            var groupDn = FindGroupDn(connection, options.BaseDn, options.RequiredGroup);
-            var user = FindAuthorizedUser(connection, options.BaseDn, account.UserPrincipalName, groupDn);
+            var configuredGroups = GetRequiredGroups(options);
+            var groupDns = new List<string>(configuredGroups.Count);
+            foreach (var group in configuredGroups)
+            {
+                var groupDn = FindGroupDn(connection, options.BaseDn, group);
+                if (groupDn is null)
+                {
+                    logger.LogWarning("Grupo AD configurado {Grupo} não foi encontrado de forma única e será ignorado.", group);
+                    continue;
+                }
+                groupDns.Add(groupDn);
+            }
+            if (groupDns.Count == 0)
+                throw new InvalidOperationException("Nenhum dos grupos administrativos configurados foi encontrado no AD.");
+            var user = FindAuthorizedUser(connection, options.BaseDn, account.UserPrincipalName, groupDns);
             if (user is null) throw new UnauthorizedAccessException("Usuário não pertence ao grupo autorizado.");
 
             var login = GetString(user, "sAMAccountName") ?? account.SamAccountName;
@@ -88,21 +102,37 @@ public sealed class AdAuthenticationService(
             issuer, audience, claims, DateTime.UtcNow, expiresAt.UtcDateTime, credentials));
     }
 
-    private static SearchResultEntry? FindAuthorizedUser(LdapConnection connection, string baseDn, string upn, string groupDn)
+    private static SearchResultEntry? FindAuthorizedUser(
+        LdapConnection connection,
+        string baseDn,
+        string upn,
+        IReadOnlyList<string> groupDns)
     {
-        var filter = $"(&(objectClass=user)(userPrincipalName={EscapeFilter(upn)})(memberOf:1.2.840.113556.1.4.1941:={EscapeFilter(groupDn)}))";
+        var membershipRules = groupDns
+            .Select(groupDn => $"(memberOf:1.2.840.113556.1.4.1941:={EscapeFilter(groupDn)})");
+        var membershipFilter = groupDns.Count == 1
+            ? membershipRules.Single()
+            : $"(|{string.Concat(membershipRules)})";
+        var filter = $"(&(objectClass=user)(userPrincipalName={EscapeFilter(upn)}){membershipFilter})";
         var response = (SearchResponse)connection.SendRequest(
             new SearchRequest(baseDn, filter, SearchScope.Subtree, "sAMAccountName", "displayName"));
         return response.Entries.Count == 1 ? response.Entries[0] : null;
     }
 
-    private static string FindGroupDn(LdapConnection connection, string baseDn, string group)
+    private static IReadOnlyList<string> GetRequiredGroups(AdOptions options) =>
+        options.RequiredGroups
+            .Append(options.RequiredGroup)
+            .Where(group => !string.IsNullOrWhiteSpace(group))
+            .Select(group => group.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static string? FindGroupDn(LdapConnection connection, string baseDn, string group)
     {
         var filter = $"(&(objectClass=group)(sAMAccountName={EscapeFilter(group)}))";
         var response = (SearchResponse)connection.SendRequest(
             new SearchRequest(baseDn, filter, SearchScope.Subtree, "distinguishedName"));
-        if (response.Entries.Count != 1) throw new InvalidOperationException("Grupo administrativo não encontrado ou ambíguo no AD.");
-        return response.Entries[0].DistinguishedName;
+        return response.Entries.Count == 1 ? response.Entries[0].DistinguishedName : null;
     }
 
     private static (string SamAccountName, string UserPrincipalName) NormalizeAccount(string value, string domain)
@@ -128,7 +158,7 @@ public sealed class AdAuthenticationService(
     private static void ValidateConfiguration(AdOptions options)
     {
         if (string.IsNullOrWhiteSpace(options.Host) || string.IsNullOrWhiteSpace(options.Domain) ||
-            string.IsNullOrWhiteSpace(options.BaseDn) || string.IsNullOrWhiteSpace(options.RequiredGroup))
+            string.IsNullOrWhiteSpace(options.BaseDn) || GetRequiredGroups(options).Count == 0)
             throw new InvalidOperationException("Configuração do Active Directory incompleta.");
         if (!options.UseSsl) throw new InvalidOperationException("Autenticação LDAP sem TLS não é permitida.");
     }

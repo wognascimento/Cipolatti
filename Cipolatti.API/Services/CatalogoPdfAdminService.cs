@@ -115,25 +115,36 @@ public sealed class CatalogoPdfAdminService(IDbConnectionFactory db, IFileStorag
         return true;
     }
 
-    public async Task<bool> UsarPrimeiraPaginaComoCapaAsync(long idPdf, string? usuario, CancellationToken ct)
+    public async Task<bool> AdicionarSegundaPaginaComoCapaAsync(long idPdf, string? usuario, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
         var row = await connection.QuerySingleOrDefaultAsync<(int IdTema, string? Pagina)>(new CommandDefinition("""
             SELECT p.idtema AS "IdTema", pg.arquivo_imagem AS "Pagina"
             FROM comercial.tema_pdf p
-            JOIN comercial.tema_pdf_pagina pg ON pg.idtema_pdf=p.idtema_pdf AND pg.numero_pagina=1
+            JOIN comercial.tema_pdf_pagina pg ON pg.idtema_pdf=p.idtema_pdf AND pg.numero_pagina=2
             WHERE p.idtema_pdf=@idPdf AND p.status='ready' AND p.ativo=true
             """, new { idPdf }, cancellationToken: ct));
         if (row.IdTema <= 0 || string.IsNullOrWhiteSpace(row.Pagina)) return false;
-        var path = await storage.SaveCoverFromPdfPageAsync(row.IdTema, row.Pagina, ct);
+        await using var page = await storage.OpenReadAsync(row.Pagina, ct)
+            ?? throw new FileNotFoundException("A segunda página renderizada ainda não está disponível.");
+        var path = await storage.SaveGalleryCoverAsWebpAsync(row.IdTema, page, ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        var ordem = await connection.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COALESCE(max(ordem)+1,0)::int FROM comercial.tema_capa WHERE idtema=@idTema AND ativo=true",
+            new { idTema = row.IdTema }, transaction, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition("""
+            INSERT INTO comercial.tema_capa(idtema,arquivo_imagem,ordem,ativo,inserido_por)
+            VALUES(@idTema,@path,@ordem,true,@usuario)
+            """, new { idTema = row.IdTema, path, ordem, usuario }, transaction, cancellationToken: ct));
         await connection.ExecuteAsync(new CommandDefinition("""
             INSERT INTO comercial.tema_catalogo
                 (idtema,slug,imagem_capa,publicado,inserido_por,data_cadastro,alterado_por,data_altera)
             VALUES (@idTema,'tema-' || @idTema::text,@path,false,@usuario,now(),@usuario,now())
-            ON CONFLICT (idtema) DO UPDATE SET imagem_capa=EXCLUDED.imagem_capa,
+            ON CONFLICT (idtema) DO UPDATE SET imagem_capa=COALESCE(NULLIF(btrim(comercial.tema_catalogo.imagem_capa),''),EXCLUDED.imagem_capa),
                 alterado_por=@usuario,data_altera=now()
-            """, new { idTema = row.IdTema, path, usuario }, cancellationToken: ct));
-        logger.LogInformation("Primeira página do PDF {IdPdf} definida como capa do tema {IdTema} por {Usuario}", idPdf, row.IdTema, usuario ?? "api");
+            """, new { idTema = row.IdTema, path, usuario }, transaction, cancellationToken: ct));
+        await transaction.CommitAsync(ct);
+        logger.LogInformation("Segunda página do PDF {IdPdf} adicionada às capas do tema {IdTema} por {Usuario}", idPdf, row.IdTema, usuario ?? "api");
         return true;
     }
 

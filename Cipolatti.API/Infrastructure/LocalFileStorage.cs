@@ -63,6 +63,33 @@ public sealed class LocalFileStorage : IFileStorage
         }
     }
 
+    public async Task<string> SaveGalleryCoverAsWebpAsync(int idTema, Stream content, CancellationToken ct)
+    {
+        var directory = SafePath("catalogo", "temas", idTema.ToString(), "capas");
+        Directory.CreateDirectory(directory);
+        var id = Guid.NewGuid().ToString("N");
+        var input = Path.Combine(directory, $"upload-{id}.tmp");
+        var output = Path.Combine(directory, $"{id}.webp");
+        try
+        {
+            await using (var file = new FileStream(input, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
+            {
+                var buffer = new byte[81920]; long total = 0; int read;
+                while ((read = await content.ReadAsync(buffer, ct)) > 0) { total += read; if (total > options.MaxCoverBytes) throw new InvalidDataException("A imagem excede o limite permitido."); await file.WriteAsync(buffer.AsMemory(0, read), ct); }
+            }
+            ValidateSignature(input);
+            using var source = SKBitmap.Decode(input) ?? throw new InvalidDataException("O conteúdo não é uma imagem válida.");
+            if (source.Width <= 0 || source.Height <= 0 || source.Width > 12000 || source.Height > 12000) throw new InvalidDataException("As dimensões da imagem são inválidas.");
+            var scale = Math.Min(1d, options.MaxCoverDimension / (double)Math.Max(source.Width, source.Height));
+            var width = Math.Max(1, (int)Math.Round(source.Width * scale)); var height = Math.Max(1, (int)Math.Round(source.Height * scale));
+            using var resized = scale < 1 ? source.Resize(new SKImageInfo(width, height), SKSamplingOptions.Default) ?? throw new InvalidDataException("Não foi possível redimensionar a imagem.") : source.Copy();
+            using var image = SKImage.FromBitmap(resized); using var encoded = image.Encode(SKEncodedImageFormat.Webp, options.WebpQuality) ?? throw new InvalidDataException("Não foi possível converter a imagem para WebP.");
+            await using (var target = new FileStream(output, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true)) encoded.SaveTo(target);
+            return $"catalogo/temas/{idTema}/capas/{id}.webp";
+        }
+        finally { TryDelete(input); }
+    }
+
     public async Task<string> SaveConceptAsWebpAsync(int idConceito, Stream content, CancellationToken ct)
     {
         var directory=SafePath("catalogo","conceitos",idConceito.ToString()); Directory.CreateDirectory(directory);
@@ -129,26 +156,6 @@ public sealed class LocalFileStorage : IFileStorage
             File.Move(temp, final, true);
             var relative = Path.GetRelativePath(root, final).Replace(Path.DirectorySeparatorChar, '/');
             return new StoredPdfPage(pageNumber, relative, width, height, webp.Length);
-        }
-        finally { TryDelete(temp); }
-    }
-
-    public async Task<string> SaveCoverFromPdfPageAsync(int idTema, string pageRelativePath, CancellationToken ct)
-    {
-        ct.ThrowIfCancellationRequested();
-        var source = GetLocalPath(pageRelativePath);
-        if (!File.Exists(source)) throw new FileNotFoundException("A primeira página renderizada ainda não está disponível.");
-        var directory = SafePath("catalogo", "temas", idTema.ToString(), "capa");
-        Directory.CreateDirectory(directory);
-        var temp = Path.Combine(directory, $"capa-{Guid.NewGuid():N}.tmp");
-        var final = Path.Combine(directory, "capa.webp");
-        try
-        {
-            await using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, true))
-            await using (var output = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true))
-                await input.CopyToAsync(output, ct);
-            File.Move(temp, final, true);
-            return $"catalogo/temas/{idTema}/capa/capa.webp";
         }
         finally { TryDelete(temp); }
     }

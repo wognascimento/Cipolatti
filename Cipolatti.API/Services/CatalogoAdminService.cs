@@ -54,12 +54,15 @@ public sealed class CatalogoAdminService(IDbConnectionFactory db, IFileStorage s
             FROM comercial.temas t LEFT JOIN comercial.tema_catalogo tc ON tc.idtema=t.idtema
             WHERE t.idtema=@idTema;
             SELECT idconceito FROM comercial.conceito_tema WHERE idtema=@idTema ORDER BY idconceito;
+            SELECT idtema_capa AS "IdTemaCapa", '/api/catalogo/capas/'||idtema||'/'||idtema_capa AS "ImagemUrl", ordem AS "Ordem"
+            FROM comercial.tema_capa WHERE idtema=@idTema AND ativo=true ORDER BY ordem,idtema_capa;
             """;
         await using var connection = await db.OpenConnectionAsync(ct);
         using var result = await connection.QueryMultipleAsync(new CommandDefinition(sql, new { idTema }, cancellationToken: ct));
         var row = await result.ReadSingleOrDefaultAsync<AdminTemaRow>();
         var concepts = (await result.ReadAsync<int>()).AsList();
-        return row is null ? null : Map(row, concepts);
+        var covers = (await result.ReadAsync<AdminTemaCapaDto>()).AsList();
+        return row is null ? null : Map(row, concepts, covers);
     }
 
     public async Task<IReadOnlyCollection<ConceitoDto>> ListarConceitosAsync(CancellationToken ct)
@@ -208,12 +211,49 @@ public sealed class CatalogoAdminService(IDbConnectionFactory db, IFileStorage s
         return await connection.QuerySingleOrDefaultAsync<string>(new CommandDefinition(sql, new { idTema }, cancellationToken: ct));
     }
 
+    public async Task<IReadOnlyCollection<AdminTemaCapaDto>?> AdicionarCapasAsync(int idTema, IReadOnlyCollection<(Stream Content, string ContentType)> imagens, string? usuario, CancellationToken ct)
+    {
+        if (imagens.Count == 0) throw new InvalidDataException("Informe ao menos uma imagem.");
+        if (imagens.Any(x => x.ContentType is not ("image/jpeg" or "image/png" or "image/webp"))) throw new InvalidDataException("Formato permitido: JPEG, PNG ou WebP.");
+        await using var connection = await db.OpenConnectionAsync(ct);
+        if (!await connection.ExecuteScalarAsync<bool>(new CommandDefinition("SELECT EXISTS(SELECT 1 FROM comercial.temas WHERE idtema=@idTema)", new { idTema }, cancellationToken: ct))) return null;
+        var paths = new List<string>();
+        foreach (var imagem in imagens) paths.Add(await storage.SaveGalleryCoverAsWebpAsync(idTema, imagem.Content, ct));
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        var ordem = await connection.ExecuteScalarAsync<int>(new CommandDefinition("SELECT COALESCE(max(ordem)+1,0)::int FROM comercial.tema_capa WHERE idtema=@idTema AND ativo=true", new { idTema }, transaction, cancellationToken: ct));
+        foreach (var path in paths)
+        {
+            await connection.ExecuteAsync(new CommandDefinition("INSERT INTO comercial.tema_capa(idtema,arquivo_imagem,ordem,ativo,inserido_por) VALUES(@idTema,@path,@ordem,true,@usuario)", new { idTema, path, ordem, usuario }, transaction, cancellationToken: ct));
+            ordem++;
+        }
+        await connection.ExecuteAsync(new CommandDefinition("UPDATE comercial.tema_catalogo SET imagem_capa=COALESCE(imagem_capa,@path),alterado_por=@usuario,data_altera=now() WHERE idtema=@idTema", new { idTema, path = paths[0], usuario }, transaction, cancellationToken: ct));
+        await transaction.CommitAsync(ct);
+        logger.LogInformation("{Quantidade} capas adicionadas ao tema {IdTema} por {Usuario}", paths.Count, idTema, usuario ?? "api");
+        return (await connection.QueryAsync<AdminTemaCapaDto>(new CommandDefinition("SELECT idtema_capa AS \"IdTemaCapa\", '/api/catalogo/capas/'||idtema||'/'||idtema_capa AS \"ImagemUrl\", ordem AS \"Ordem\" FROM comercial.tema_capa WHERE idtema=@idTema AND ativo=true ORDER BY ordem,idtema_capa", new { idTema }, cancellationToken: ct))).AsList();
+    }
+
+    public async Task<bool> RemoverCapaAsync(long idTemaCapa, string? usuario, CancellationToken ct)
+    {
+        await using var connection = await db.OpenConnectionAsync(ct); await using var transaction = await connection.BeginTransactionAsync(ct);
+        var cover = await connection.QuerySingleOrDefaultAsync<CapaArquivoRow>(new CommandDefinition("SELECT idtema AS \"IdTema\",arquivo_imagem AS \"Arquivo\" FROM comercial.tema_capa WHERE idtema_capa=@idTemaCapa AND ativo=true", new { idTemaCapa }, transaction, cancellationToken: ct));
+        if (cover is null) return false;
+        await connection.ExecuteAsync(new CommandDefinition("UPDATE comercial.tema_capa SET ativo=false,alterado_por=@usuario,data_altera=now() WHERE idtema_capa=@idTemaCapa", new { idTemaCapa, usuario }, transaction, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition("UPDATE comercial.tema_catalogo SET imagem_capa=(SELECT arquivo_imagem FROM comercial.tema_capa WHERE idtema=@idTema AND ativo=true ORDER BY ordem,idtema_capa LIMIT 1),alterado_por=@usuario,data_altera=now() WHERE idtema=@idTema AND imagem_capa=@arquivo", new { idTema = cover.IdTema, arquivo = cover.Arquivo, usuario }, transaction, cancellationToken: ct));
+        await transaction.CommitAsync(ct); return true;
+    }
+
+    public async Task<string?> ObterCapaGaleriaPublicaAsync(int idTema, long idTemaCapa, CancellationToken ct)
+    {
+        const string sql = """SELECT c.arquivo_imagem FROM comercial.tema_capa c JOIN comercial.temas t ON t.idtema=c.idtema WHERE c.idtema=@idTema AND c.idtema_capa=@idTemaCapa AND c.ativo=true AND t.ativo='S'""";
+        await using var connection = await db.OpenConnectionAsync(ct); return await connection.QuerySingleOrDefaultAsync<string>(new CommandDefinition(sql, new { idTema, idTemaCapa }, cancellationToken: ct));
+    }
+
     public async Task<bool> AtualizarImagemConceitoAsync(int idConceito,Stream content,string contentType,string? usuario,CancellationToken ct)
     { if(contentType is not("image/jpeg" or "image/png" or "image/webp"))throw new InvalidDataException("Formato permitido: JPEG, PNG ou WebP."); await using var connection=await db.OpenConnectionAsync(ct);if(!await connection.ExecuteScalarAsync<bool>(new CommandDefinition("SELECT EXISTS(SELECT 1 FROM comercial.conceito WHERE idconceito=@idConceito)",new{idConceito},cancellationToken:ct)))return false;var path=await storage.SaveConceptAsWebpAsync(idConceito,content,ct);await connection.ExecuteAsync(new CommandDefinition("UPDATE comercial.conceito SET imagem_url=@path,alterado_por=@usuario,data_altera=now() WHERE idconceito=@idConceito",new{path,idConceito,usuario},cancellationToken:ct));return true; }
     public async Task<string?> ObterImagemConceitoAsync(int idConceito,CancellationToken ct){await using var connection=await db.OpenConnectionAsync(ct);return await connection.QuerySingleOrDefaultAsync<string>(new CommandDefinition("SELECT imagem_url FROM comercial.conceito WHERE idconceito=@idConceito",new{idConceito},cancellationToken:ct));}
 
-    private static AdminTemaDetalheDto Map(AdminTemaRow row, IReadOnlyCollection<int> concepts) => new(row.IdTema,
-        row.NomeLegado,row.NomePublico,row.Slug,row.ImagemCapa,row.DescricaoCatalogo,row.Publicado,row.Destaque,row.Inedito,row.Ordem,concepts);
+    private static AdminTemaDetalheDto Map(AdminTemaRow row, IReadOnlyCollection<int> concepts, IReadOnlyCollection<AdminTemaCapaDto> covers) => new(row.IdTema,
+        row.NomeLegado,row.NomePublico,row.Slug,row.ImagemCapa,row.DescricaoCatalogo,row.Publicado,row.Destaque,row.Inedito,row.Ordem,concepts,covers);
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string EscapeLike(string value) => value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
     internal static string Slugify(string value)
@@ -229,4 +269,5 @@ public sealed class CatalogoAdminService(IDbConnectionFactory db, IFileStorage s
     }
     private sealed record AdminTemaRow(int IdTema,string NomeLegado,string? NomePublico,string? Slug,string? ImagemCapa,
         string? DescricaoCatalogo,bool Publicado,bool Destaque,bool Inedito,int Ordem);
+    private sealed record CapaArquivoRow(int IdTema, string Arquivo);
 }

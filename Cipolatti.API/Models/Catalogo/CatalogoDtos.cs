@@ -1,6 +1,7 @@
 namespace Cipolatti.API.Models.Catalogo;
 
 public sealed record ConceitoDto(int IdConceito, string Nome, int QuantidadeTemas = 0, string? ImagemUrl = null);
+public sealed record TemaCapaDto(long IdTemaCapa, string ImagemUrl, int Ordem);
 
 public sealed record TemaResumoDto(
     int IdTema,
@@ -8,10 +9,12 @@ public sealed record TemaResumoDto(
     string Nome,
     string? ImagemCapa,
     string? Descricao,
+    string? FaixaPreco,
     bool Destaque,
     bool Inedito,
     int Ordem,
-    IReadOnlyCollection<ConceitoDto> Conceitos);
+    IReadOnlyCollection<ConceitoDto> Conceitos,
+    IReadOnlyCollection<string> Capas);
 
 public sealed record TemaDetalheDto(
     int IdTema,
@@ -19,9 +22,11 @@ public sealed record TemaDetalheDto(
     string Nome,
     string? ImagemCapa,
     string? Descricao,
+    string? FaixaPreco,
     bool Destaque,
     bool Inedito,
     IReadOnlyCollection<ConceitoDto> Conceitos,
+    IReadOnlyCollection<TemaCapaDto> Capas,
     IReadOnlyCollection<TemaPdfDto> Pdfs,
     IReadOnlyCollection<TemaVideoDto> Videos);
 

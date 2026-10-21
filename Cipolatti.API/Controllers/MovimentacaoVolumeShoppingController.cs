@@ -1,13 +1,14 @@
 using Cipolatti.API.Infrastructure;
 using Cipolatti.API.Models;
 using Dapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 namespace Cipolatti.API.Controllers;
 
 [ApiController, Route("api/[controller]")]
 public sealed class MovimentacaoVolumeShoppingController(IDbConnectionFactory db) : ControllerBase
 {
-    [HttpPost("GravarVolume")]
+    [AllowAnonymous, HttpPost("GravarVolume")]
     public async Task<ActionResult> Insert([FromBody] List<TblMovimentacaoVolumeShopping> volumes, CancellationToken ct)
     {
         if (volumes.Count == 0) return ValidationProblem("Informe ao menos um volume.");
@@ -22,7 +23,7 @@ public sealed class MovimentacaoVolumeShoppingController(IDbConnectionFactory db
         return Created(string.Empty, new { inseridos = volumes.Count });
     }
 
-    [HttpGet("Endereco")]
+    [AllowAnonymous, HttpGet("Endereco")]
     public async Task<ActionResult<QryEnderecamentoGalpao>> Endereco(string barcode, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);
@@ -30,7 +31,7 @@ public sealed class MovimentacaoVolumeShoppingController(IDbConnectionFactory db
         return item is null ? NotFound() : Ok(item);
     }
 
-    [HttpGet("Volume")]
+    [AllowAnonymous, HttpGet("Volume")]
     public async Task<ActionResult<QryLookup>> Volume(string qrcode, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);

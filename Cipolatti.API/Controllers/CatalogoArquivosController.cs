@@ -18,6 +18,16 @@ public sealed class CatalogoArquivosController(ICatalogoAdminService catalogo, I
         return stream is null ? NotFound() : File(stream, "image/webp", enableRangeProcessing: true);
     }
 
+    [HttpGet("{idTema:int}/{idTemaCapa:long}")]
+    [ResponseCache(Duration = 86400, Location = ResponseCacheLocation.Any)]
+    public async Task<ActionResult> CapaGaleria(int idTema, long idTemaCapa, CancellationToken ct)
+    {
+        var path = await catalogo.ObterCapaGaleriaPublicaAsync(idTema, idTemaCapa, ct);
+        if (path is null) return NotFound();
+        var stream = await storage.OpenReadAsync(path, ct);
+        return stream is null ? NotFound() : File(stream, "image/webp", enableRangeProcessing: true);
+    }
+
     [HttpGet("/api/catalogo/conceitos/{idConceito:int}")][ResponseCache(Duration=3600,Location=ResponseCacheLocation.Any)]
     public async Task<ActionResult> Conceito(int idConceito,CancellationToken ct){var path=await catalogo.ObterImagemConceitoAsync(idConceito,ct);if(path is null)return NotFound();var stream=await storage.OpenReadAsync(path,ct);return stream is null?NotFound():File(stream,"image/webp");}
 

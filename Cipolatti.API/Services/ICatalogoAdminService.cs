@@ -14,6 +14,9 @@ public interface ICatalogoAdminService
     Task<AdminTemaDetalheDto?> AtualizarAsync(int idTema, AtualizarTemaCatalogoRequest request, string? usuario, CancellationToken ct);
     Task<string?> AtualizarCapaAsync(int idTema, Stream content, string contentType, string? usuario, CancellationToken ct);
     Task<string?> ObterCapaPublicaAsync(int idTema, CancellationToken ct);
+    Task<IReadOnlyCollection<AdminTemaCapaDto>?> AdicionarCapasAsync(int idTema, IReadOnlyCollection<(Stream Content, string ContentType)> imagens, string? usuario, CancellationToken ct);
+    Task<bool> RemoverCapaAsync(long idTemaCapa, string? usuario, CancellationToken ct);
+    Task<string?> ObterCapaGaleriaPublicaAsync(int idTema, long idTemaCapa, CancellationToken ct);
     Task<bool> AtualizarImagemConceitoAsync(int idConceito, Stream content, string contentType, string? usuario, CancellationToken ct);
     Task<string?> ObterImagemConceitoAsync(int idConceito, CancellationToken ct);
 }

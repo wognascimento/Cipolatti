@@ -1,13 +1,14 @@
 using Cipolatti.API.Infrastructure;
 using Cipolatti.API.Models;
 using Dapper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 namespace Cipolatti.API.Controllers;
 
 [ApiController, Route("api/[controller]")]
 public sealed class AprovadoController(IDbConnectionFactory db) : ControllerBase
 {
-    [HttpGet("SelecionarTodos")]
+    [AllowAnonymous, HttpGet("SelecionarTodos")]
     public async Task<ActionResult<PagedResult<QryAprovados>>> Get([FromQuery] PaginationQuery query, CancellationToken ct)
     {
         await using var connection = await db.OpenConnectionAsync(ct);

@@ -21,7 +21,9 @@ public sealed class CatalogoController(ICatalogoService catalogo) : ControllerBa
         var searchPattern = string.IsNullOrWhiteSpace(query.Busca) ? null : LikePattern(query.Busca);
         var filter = new CatalogoTemasFilter(searchPattern, conceptIds,
             string.Equals(query.Match, "all", StringComparison.OrdinalIgnoreCase),
-            query.Destaque, query.Page, query.PageSize);
+            query.Destaque,
+            string.IsNullOrWhiteSpace(query.FaixaPreco) ? null : query.FaixaPreco.Trim(),
+            query.Page, query.PageSize);
         return Ok(await catalogo.ListarTemasAsync(filter, ct));
     }
 
@@ -35,6 +37,10 @@ public sealed class CatalogoController(ICatalogoService catalogo) : ControllerBa
     [HttpGet("conceitos")]
     public async Task<ActionResult<IReadOnlyCollection<ConceitoDto>>> ListarConceitos(CancellationToken ct) =>
         Ok(await catalogo.ListarConceitosAsync(ct));
+
+    [HttpGet("faixas-preco")]
+    public async Task<ActionResult<IReadOnlyCollection<string>>> ListarFaixasPreco(CancellationToken ct) =>
+        Ok(await catalogo.ListarFaixasPrecoAsync(ct));
 
     [HttpGet("temas/{slug}/pdfs")]
     public async Task<ActionResult<IReadOnlyCollection<TemaPdfDto>>> ListarPdfs(string slug, CancellationToken ct)
@@ -92,4 +98,3 @@ public sealed class CatalogoController(ICatalogoService catalogo) : ControllerBa
         return true;
     }
 }
-

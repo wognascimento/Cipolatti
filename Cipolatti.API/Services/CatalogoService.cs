@@ -8,9 +8,8 @@ namespace Cipolatti.API.Services;
 
 public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
 {
-    // Temporariamente, o catálogo lista todo tema existente, independentemente
-    // do status editorial ou do campo legado de ativação.
-    private const string PublicThemePredicate = "TRUE";
+    // O catálogo público inclui somente temas ativos no cadastro comercial.
+    private const string PublicThemePredicate = "t.ativo = 'S'";
 
     public async Task<PagedResult<TemaResumoDto>> ListarTemasAsync(CatalogoTemasFilter filter, CancellationToken ct)
     {
@@ -21,6 +20,7 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
             HasConceptFilter = filter.ConceptIds.Length > 0,
             filter.MatchAll,
             filter.Destaque,
+            filter.FaixaPreco,
             filter.PageSize,
             Offset = (filter.Page - 1) * filter.PageSize
         };
@@ -31,10 +31,12 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
             LEFT JOIN comercial.tema_catalogo tc ON tc.idtema = t.idtema
             WHERE {PublicThemePredicate}
               AND (@Destaque IS NULL OR tc.destaque = @Destaque)
+              AND (@FaixaPreco IS NULL OR t.faixapreco = @FaixaPreco)
               AND (@SearchPattern IS NULL OR
                    t.temas ILIKE @SearchPattern ESCAPE '\' OR
                    t.nome_fantasia ILIKE @SearchPattern ESCAPE '\' OR
                    t.codinome ILIKE @SearchPattern ESCAPE '\' OR
+                   t.temas_novos_2007 ILIKE @SearchPattern ESCAPE '\' OR
                    t.descricao ILIKE @SearchPattern ESCAPE '\' OR
                    t.palavra_chave ILIKE @SearchPattern ESCAPE '\' OR
                    EXISTS (
@@ -56,21 +58,26 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
                    COALESCE(NULLIF(btrim(tc.nome_publico), ''), t.temas) AS "Nome",
                    CASE WHEN tc.imagem_capa IS NULL THEN NULL ELSE '/api/catalogo/capas/' || t.idtema END AS "ImagemCapa",
                    COALESCE(NULLIF(btrim(tc.descricao_catalogo), ''), t.descricao) AS "Descricao",
+                   NULLIF(btrim(t.faixapreco), '') AS "FaixaPreco",
                    COALESCE(tc.destaque, false) AS "Destaque", COALESCE(tc.inedito, false) AS "Inedito", COALESCE(tc.ordem, 0) AS "Ordem",
                    COALESCE(jsonb_agg(
                      jsonb_build_object('idConceito', c.idconceito, 'nome', c.conceito, 'quantidadeTemas', 0)
                      ORDER BY c.conceito
-                   ) FILTER (WHERE c.idconceito IS NOT NULL), '[]'::jsonb)::text AS "ConceitosJson"
+                   ) FILTER (WHERE c.idconceito IS NOT NULL), '[]'::jsonb)::text AS "ConceitosJson",
+                   COALESCE((SELECT jsonb_agg('/api/catalogo/capas/'||cp.idtema||'/'||cp.idtema_capa ORDER BY cp.ordem,cp.idtema_capa)
+                             FROM comercial.tema_capa cp WHERE cp.idtema=t.idtema AND cp.ativo=true), '[]'::jsonb)::text AS "CapasJson"
             FROM comercial.temas t
             LEFT JOIN comercial.tema_catalogo tc ON tc.idtema = t.idtema
             LEFT JOIN comercial.conceito_tema ct ON ct.idtema = t.idtema
             LEFT JOIN comercial.conceito c ON c.idconceito = ct.idconceito
             WHERE {PublicThemePredicate}
               AND (@Destaque IS NULL OR tc.destaque = @Destaque)
+              AND (@FaixaPreco IS NULL OR t.faixapreco = @FaixaPreco)
               AND (@SearchPattern IS NULL OR
                    t.temas ILIKE @SearchPattern ESCAPE '\' OR
                    t.nome_fantasia ILIKE @SearchPattern ESCAPE '\' OR
                    t.codinome ILIKE @SearchPattern ESCAPE '\' OR
+                   t.temas_novos_2007 ILIKE @SearchPattern ESCAPE '\' OR
                    t.descricao ILIKE @SearchPattern ESCAPE '\' OR
                    t.palavra_chave ILIKE @SearchPattern ESCAPE '\' OR
                    EXISTS (
@@ -88,8 +95,10 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
                      WHERE ctf.idtema = t.idtema AND ctf.idconceito = ANY(@ConceptIds)
                    ) = cardinality(@ConceptIds)))
             GROUP BY t.idtema, t.temas, t.descricao, tc.slug, tc.nome_publico,
-                     tc.imagem_capa, tc.descricao_catalogo, tc.destaque, tc.inedito, tc.ordem
-            ORDER BY COALESCE(tc.inedito, false) DESC, COALESCE(tc.destaque, false) DESC, tc.ordem, "Nome", t.idtema
+                     t.faixapreco, tc.imagem_capa, tc.descricao_catalogo, tc.destaque, tc.inedito, tc.ordem
+            ORDER BY COALESCE(tc.inedito, false) DESC, COALESCE(tc.destaque, false) DESC,
+                     CASE WHEN COALESCE(tc.inedito, false) OR COALESCE(tc.destaque, false) THEN COALESCE(tc.ordem, 0) ELSE 0 END,
+                     "Nome", t.idtema
             LIMIT @PageSize OFFSET @Offset;
             """;
 
@@ -107,6 +116,7 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
                    COALESCE(NULLIF(btrim(tc.nome_publico), ''), t.temas) AS "Nome",
                    CASE WHEN tc.imagem_capa IS NULL THEN NULL ELSE '/api/catalogo/capas/' || t.idtema END AS "ImagemCapa",
                    COALESCE(NULLIF(btrim(tc.descricao_catalogo), ''), t.descricao) AS "Descricao",
+                   NULLIF(btrim(t.faixapreco), '') AS "FaixaPreco",
                    COALESCE(tc.destaque, false) AS "Destaque",
                    COALESCE(tc.inedito, false) AS "Inedito"
             FROM comercial.temas t
@@ -122,6 +132,13 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
             WHERE {PublicThemePredicate} AND COALESCE(tc.slug, 'tema-' || t.idtema::text) = @slug
             ORDER BY c.conceito;
 
+            SELECT cp.idtema_capa AS "IdTemaCapa", '/api/catalogo/capas/'||cp.idtema||'/'||cp.idtema_capa AS "ImagemUrl", cp.ordem AS "Ordem"
+            FROM comercial.tema_capa cp
+            JOIN comercial.temas t ON t.idtema=cp.idtema
+            LEFT JOIN comercial.tema_catalogo tc ON tc.idtema=t.idtema
+            WHERE {PublicThemePredicate} AND cp.ativo=true AND COALESCE(tc.slug, 'tema-' || t.idtema::text)=@slug
+            ORDER BY cp.ordem,cp.idtema_capa;
+
             {PdfsBySlugSql}
 
             {VideosBySlugSql}
@@ -131,10 +148,11 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
         using var results = await connection.QueryMultipleAsync(new CommandDefinition(sql, new { slug }, cancellationToken: ct));
         var theme = await results.ReadSingleOrDefaultAsync<TemaDetalheRow>();
         var concepts = (await results.ReadAsync<ConceitoDto>()).AsList();
+        var covers = (await results.ReadAsync<TemaCapaDto>()).AsList();
         var pdfs = (await results.ReadAsync<TemaPdfDto>()).AsList();
         var videos = (await results.ReadAsync<TemaVideoDto>()).AsList();
         return theme is null ? null : new TemaDetalheDto(theme.IdTema, theme.Slug, theme.Nome,
-            theme.ImagemCapa, theme.Descricao, theme.Destaque, theme.Inedito, concepts, pdfs, videos);
+            theme.ImagemCapa, theme.Descricao, theme.FaixaPreco, theme.Destaque, theme.Inedito, concepts, covers, pdfs, videos);
     }
 
     public async Task<IReadOnlyCollection<ConceitoDto>> ListarConceitosAsync(CancellationToken ct)
@@ -144,13 +162,29 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
                    count(DISTINCT t.idtema)::int AS "QuantidadeTemas",CASE WHEN c.imagem_url IS NULL THEN NULL ELSE '/api/catalogo/conceitos/'||c.idconceito END AS "ImagemUrl"
             FROM comercial.conceito c
             LEFT JOIN comercial.conceito_tema ct ON ct.idconceito = c.idconceito
-            LEFT JOIN comercial.temas t ON t.idtema = ct.idtema
+            LEFT JOIN comercial.temas t ON t.idtema = ct.idtema AND t.ativo = 'S'
             LEFT JOIN comercial.tema_catalogo tc ON tc.idtema = t.idtema
             GROUP BY c.idconceito, c.conceito, c.imagem_url
             ORDER BY c.conceito;
             """;
         await using var connection = await db.OpenConnectionAsync(ct);
         return (await connection.QueryAsync<ConceitoDto>(new CommandDefinition(sql, cancellationToken: ct))).AsList();
+    }
+
+    public async Task<IReadOnlyCollection<string>> ListarFaixasPrecoAsync(CancellationToken ct)
+    {
+        const string sql = """
+            SELECT fp.faixa AS "FaixaPreco"
+            FROM comercial.tbl_faixapreco_temas fp
+            WHERE EXISTS (
+              SELECT 1
+              FROM comercial.temas t
+              WHERE t.ativo = 'S' AND t.faixapreco = fp.faixa
+            )
+            ORDER BY fp.indice, fp.faixa;
+            """;
+        await using var connection = await db.OpenConnectionAsync(ct);
+        return (await connection.QueryAsync<string>(new CommandDefinition(sql, cancellationToken: ct))).AsList();
     }
 
     public Task<IReadOnlyCollection<TemaPdfDto>?> ListarPdfsAsync(string slug, CancellationToken ct) =>
@@ -206,6 +240,9 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
                      COALESCE(NULLIF(btrim(tc.nome_publico), ''), t.temas) AS nome,
                      CASE WHEN tc.imagem_capa IS NULL THEN NULL ELSE '/api/catalogo/capas/' || t.idtema END AS imagem_capa,
                      COALESCE(NULLIF(btrim(tc.descricao_catalogo), ''), t.descricao) AS descricao,
+                     NULLIF(btrim(t.faixapreco), '') AS faixa_preco,
+                     COALESCE((SELECT jsonb_agg('/api/catalogo/capas/'||cp.idtema||'/'||cp.idtema_capa ORDER BY cp.ordem,cp.idtema_capa)
+                               FROM comercial.tema_capa cp WHERE cp.idtema=t.idtema AND cp.ativo=true), '[]'::jsonb)::text AS capas_json,
                      tc.destaque, tc.inedito, tc.ordem,
                      (SELECT count(*)::int * 2
                         FROM comercial.conceito_tema a
@@ -223,21 +260,27 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
               WHERE {PublicThemePredicate}
             ), melhores AS (
               SELECT * FROM candidatos WHERE pontuacao > 0
-              ORDER BY pontuacao DESC, COALESCE(inedito, false) DESC, COALESCE(destaque, false) DESC, ordem, nome, idtema
+              ORDER BY pontuacao DESC, COALESCE(inedito, false) DESC, COALESCE(destaque, false) DESC,
+                       CASE WHEN COALESCE(inedito, false) OR COALESCE(destaque, false) THEN COALESCE(ordem, 0) ELSE 0 END,
+                       nome, idtema
               LIMIT 4
             )
             SELECT m.idtema AS "IdTema", m.slug AS "Slug", m.nome AS "Nome",
                    m.imagem_capa AS "ImagemCapa", m.descricao AS "Descricao",
+                   m.faixa_preco AS "FaixaPreco",
                    m.destaque AS "Destaque", m.inedito AS "Inedito", m.ordem AS "Ordem",
                    COALESCE(jsonb_agg(
                      jsonb_build_object('idConceito', c.idconceito, 'nome', c.conceito, 'quantidadeTemas', 0)
                      ORDER BY c.conceito
-                   ) FILTER (WHERE c.idconceito IS NOT NULL), '[]'::jsonb)::text AS "ConceitosJson"
+                   ) FILTER (WHERE c.idconceito IS NOT NULL), '[]'::jsonb)::text AS "ConceitosJson",
+                   m.capas_json AS "CapasJson"
             FROM melhores m
             LEFT JOIN comercial.conceito_tema ct ON ct.idtema=m.idtema
             LEFT JOIN comercial.conceito c ON c.idconceito=ct.idconceito
-            GROUP BY m.idtema,m.slug,m.nome,m.imagem_capa,m.descricao,m.destaque,m.inedito,m.ordem,m.pontuacao
-            ORDER BY m.pontuacao DESC,COALESCE(m.inedito, false) DESC,COALESCE(m.destaque, false) DESC,m.ordem,m.nome,m.idtema;
+            GROUP BY m.idtema,m.slug,m.nome,m.imagem_capa,m.descricao,m.faixa_preco,m.capas_json,m.destaque,m.inedito,m.ordem,m.pontuacao
+            ORDER BY m.pontuacao DESC,COALESCE(m.inedito, false) DESC,COALESCE(m.destaque, false) DESC,
+                     CASE WHEN COALESCE(m.inedito, false) OR COALESCE(m.destaque, false) THEN COALESCE(m.ordem, 0) ELSE 0 END,
+                     m.nome,m.idtema;
             """;
         await using var connection = await db.OpenConnectionAsync(ct);
         using var results = await connection.QueryMultipleAsync(new CommandDefinition(sql, new { slug }, cancellationToken: ct));
@@ -263,8 +306,9 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
     }
 
     private static TemaResumoDto MapResumo(TemaResumoRow row) => new(row.IdTema, row.Slug, row.Nome,
-        row.ImagemCapa, row.Descricao, row.Destaque, row.Inedito, row.Ordem,
-        JsonSerializer.Deserialize<ConceitoDto[]>(row.ConceitosJson, JsonOptions) ?? []);
+        row.ImagemCapa, row.Descricao, row.FaixaPreco, row.Destaque, row.Inedito, row.Ordem,
+        JsonSerializer.Deserialize<ConceitoDto[]>(row.ConceitosJson, JsonOptions) ?? [],
+        JsonSerializer.Deserialize<string[]>(row.CapasJson, JsonOptions) ?? []);
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -296,7 +340,7 @@ public sealed class CatalogoService(IDbConnectionFactory db) : ICatalogoService
         """;
 
     private sealed record TemaResumoRow(int IdTema, string Slug, string Nome, string? ImagemCapa,
-        string? Descricao, bool Destaque, bool Inedito, int Ordem, string ConceitosJson);
+        string? Descricao, string? FaixaPreco, bool Destaque, bool Inedito, int Ordem, string ConceitosJson, string CapasJson);
     private sealed record TemaDetalheRow(int IdTema, string Slug, string Nome, string? ImagemCapa,
-        string? Descricao, bool Destaque, bool Inedito);
+        string? Descricao, string? FaixaPreco, bool Destaque, bool Inedito);
 }

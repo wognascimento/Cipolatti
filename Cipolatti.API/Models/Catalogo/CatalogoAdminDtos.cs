@@ -7,7 +7,9 @@ public sealed record AdminTemaResumoDto(int IdTema, string Nome, string? Slug, b
 
 public sealed record AdminTemaDetalheDto(int IdTema, string NomeLegado, string? NomePublico,
     string? Slug, string? ImagemCapa, string? DescricaoCatalogo, bool Publicado, bool Destaque,
-    bool Inedito, int Ordem, IReadOnlyCollection<int> ConceitoIds);
+    bool Inedito, int Ordem, IReadOnlyCollection<int> ConceitoIds, IReadOnlyCollection<AdminTemaCapaDto> Capas);
+
+public sealed record AdminTemaCapaDto(long IdTemaCapa, string ImagemUrl, int Ordem);
 
 public sealed class AtualizarTemaCatalogoRequest
 {

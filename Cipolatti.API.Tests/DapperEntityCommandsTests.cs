@@ -1,9 +1,44 @@
 using Cipolatti.API.Infrastructure;
 using Cipolatti.API.Models;
+using Npgsql;
+using NpgsqlTypes;
 namespace Cipolatti.API.Tests;
 
 public sealed class DapperEntityCommandsTests
 {
+    [Fact]
+    public void Romaneio_uses_PostgreSql_date_and_time_types()
+    {
+        Assert.Equal(typeof(DateOnly), typeof(TRomaneio).GetProperty(nameof(TRomaneio.DataCarregamento))!.PropertyType);
+        Assert.Equal(typeof(TimeOnly), typeof(TRomaneio).GetProperty(nameof(TRomaneio.HoraChegada))!.PropertyType);
+        Assert.Equal(typeof(TimeOnly?), typeof(TRomaneio).GetProperty(nameof(TRomaneio.InicioCarregamento))!.PropertyType);
+        Assert.Equal(typeof(DateOnly?), typeof(TRomaneio).GetProperty(nameof(TRomaneio.DataSaidaCaminhao))!.PropertyType);
+    }
+
+    [Fact]
+    public void DateOnly_handler_configures_a_PostgreSql_date_parameter()
+    {
+        var parameter = new NpgsqlParameter();
+        var value = new DateOnly(2026, 10, 21);
+
+        new DapperDateOnlyTypeHandler().SetValue(parameter, value);
+
+        Assert.Equal(NpgsqlDbType.Date, parameter.NpgsqlDbType);
+        Assert.Equal(value, parameter.Value);
+    }
+
+    [Fact]
+    public void TimeOnly_handler_configures_a_PostgreSql_time_parameter()
+    {
+        var parameter = new NpgsqlParameter();
+        var value = new TimeOnly(12, 44, 56);
+
+        new DapperTimeOnlyTypeHandler().SetValue(parameter, value);
+
+        Assert.Equal(NpgsqlDbType.Time, parameter.NpgsqlDbType);
+        Assert.Equal(value, parameter.Value);
+    }
+
     [Fact]
     public void Insert_keeps_string_key_and_parameterizes_values()
     {

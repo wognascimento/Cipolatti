@@ -41,6 +41,7 @@ public sealed class CatalogoControllerTests
             Busca = " Noel_100% ",
             Conceitos = "20, 12,20",
             Match = "all",
+            FaixaPreco = " $$$ ",
             Page = 2,
             PageSize = 10
         }, TestContext.Current.CancellationToken);
@@ -49,6 +50,7 @@ public sealed class CatalogoControllerTests
         Assert.NotNull(service.LastFilter);
         Assert.Equal([12, 20], service.LastFilter.ConceptIds);
         Assert.True(service.LastFilter.MatchAll);
+        Assert.Equal("$$$", service.LastFilter.FaixaPreco);
         Assert.Equal("%Noel\\_100\\%%", service.LastFilter.SearchPattern);
         Assert.Equal(2, service.LastFilter.Page);
         Assert.Equal(10, service.LastFilter.PageSize);
@@ -83,6 +85,7 @@ public sealed class CatalogoControllerTests
 
         public Task<TemaDetalheDto?> ObterTemaAsync(string slug, CancellationToken ct) => Task.FromResult<TemaDetalheDto?>(null);
         public Task<IReadOnlyCollection<ConceitoDto>> ListarConceitosAsync(CancellationToken ct) => Task.FromResult<IReadOnlyCollection<ConceitoDto>>([]);
+        public Task<IReadOnlyCollection<string>> ListarFaixasPrecoAsync(CancellationToken ct) => Task.FromResult<IReadOnlyCollection<string>>([]);
         public Task<IReadOnlyCollection<TemaPdfDto>?> ListarPdfsAsync(string slug, CancellationToken ct) => Task.FromResult<IReadOnlyCollection<TemaPdfDto>?>(null);
         public Task<IReadOnlyCollection<TemaPdfPaginaDto>?> ListarPaginasAsync(long idPdf, CancellationToken ct) => Task.FromResult<IReadOnlyCollection<TemaPdfPaginaDto>?>(null);
         public Task<IReadOnlyCollection<TemaVideoDto>?> ListarVideosAsync(string slug, CancellationToken ct) => Task.FromResult<IReadOnlyCollection<TemaVideoDto>?>(null);
